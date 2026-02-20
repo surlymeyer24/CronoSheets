@@ -120,6 +120,7 @@ function agregarEnResumen(hojaResumen, lista) {
     }
 
     renumerarResumen();
+    aplicarEstilosResumen(hojaResumen);
 
   } catch (error) {
     Logger.log('Error Fase 1 (RESUMEN): ' + error.message);
@@ -135,6 +136,7 @@ function crearHojasNuevas(ss, hojaResumen, nombres) {
   var creadas = [];
   var fallidas = [];
 
+  // 2a. Crear hojas desde modelo
   nombres.forEach(function(nombre) {
     try {
       crearHojaDesdeModelo(nombre);
@@ -144,78 +146,65 @@ function crearHojasNuevas(ss, hojaResumen, nombres) {
     }
   });
 
+  // 2b. Mover a posición alfabética
   if (creadas.length > 0) {
-    moverHojasNuevas(creadas);
-
-    creadas.forEach(function(nombre) {
-      try {
-        aplicarProteccionAHoja(nombre);
-      } catch (e) {
-        Logger.log('Error protegiendo "' + nombre + '": ' + e.message);
-      }
-    });
+    try {
+      moverHojasNuevas(creadas);
+    } catch (e) {
+      Logger.log('Error moviendo hojas: ' + e.message);
+    }
   }
 
-  desprotegerHoja(hojaResumen);
-  try { crearHipervinculosEnResumen(); } catch (e) {
-    Logger.log('Error hipervínculos: ' + e.message);
-  }
-  try { reprotegerResumen(hojaResumen); } catch (e) {}
+  // 2c. Proteger cada hoja nueva (esNueva=true, no busca protecciones existentes)
+  creadas.forEach(function(nombre) {
+    try {
+      aplicarProteccionAHoja(nombre, true);
+    } catch (e) {
+      Logger.log('Error protegiendo "' + nombre + '": ' + e.message);
+    }
+  });
+
+  // 2d. Actualizar hipervínculos en RESUMEN
+  actualizarHipervinculosResumen(hojaResumen);
 
   return { creadas: creadas, fallidas: fallidas };
 }
 
+function actualizarHipervinculosResumen(hojaResumen) {
+  desprotegerHoja(hojaResumen);
+  try {
+    crearHipervinculosEnResumen();
+  } catch (e) {
+    Logger.log('Error hipervínculos: ' + e.message);
+  }
+  try { reprotegerResumen(hojaResumen); } catch (e) {}
+}
+
 function moverHojasNuevas(nombresNuevos) {
   if (nombresNuevos.length === 0) return;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const nuevosSet = new Set(nombresNuevos);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  nombresNuevos
-    .slice()
-    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
-    .forEach(nombre => {
-      const nombresOrdenados = ss.getSheets()
-        .filter(h => !esHojaIgnorada(h.getName()))
-        .map(h => h.getName())
-        .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  var hojas = ss.getSheets().filter(function(h) { return !esHojaIgnorada(h.getName()); });
+  hojas.sort(function(a, b) {
+    return a.getName().localeCompare(b.getName(), 'es', { sensitivity: 'base' });
+  });
 
-      const idx = nombresOrdenados.indexOf(nombre);
-      if (idx === -1) return;
-
-      const hoja = ss.getSheetByName(nombre);
-      if (hoja) {
-        ss.setActiveSheet(hoja);
-        ss.moveActiveSheet(3 + idx + 1);
-      }
-    });
+  hojas.forEach(function(hoja, index) {
+    ss.setActiveSheet(hoja);
+    ss.moveActiveSheet(3 + index + 1);
+  });
 }
 
 function crearHojaDesdeModelo(nombreGuardia) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const hojaModelo = ss.getSheetByName('modelo');
-  
-  if (!hojaModelo) {
-    throw new Error('No existe la hoja "modelo"');
-  }
-  
-  // Verificar si ya existe la hoja
-  if (ss.getSheetByName(nombreGuardia)) {
-    return; // Ya existe, no crear duplicado
-  }
-  
-  // Copiar modelo
-  const nuevaHoja = hojaModelo.copyTo(ss);
+
+  if (!hojaModelo) throw new Error('No existe la hoja "modelo"');
+  if (ss.getSheetByName(nombreGuardia)) return;
+
+  var nuevaHoja = hojaModelo.copyTo(ss);
   nuevaHoja.setName(nombreGuardia);
-  
-  // Poner nombre en título (B1:N3)
-  const rango = nuevaHoja.getRange('B1:N3');
-  rango.breakApart();
-  rango.merge();
-  rango.setValue(nombreGuardia);
-  rango.setHorizontalAlignment('center');
-  rango.setVerticalAlignment('middle');
-  rango.setFontSize(37);
-  rango.setFontWeight('bold');
+  nuevaHoja.getRange('B1').setValue(nombreGuardia);
 }
 
 function esHojaIgnorada(nombre) {
@@ -314,6 +303,37 @@ function renumerarResumen() {
   hojaResumen.getRange(5, 2, datos.length, 1).setValues(datos); // Columna B, desde fila 5
 }
 
+function aplicarEstilosResumen(hojaResumen) {
+  if (!hojaResumen) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    hojaResumen = obtenerHojaResumen(ss);
+  }
+  if (!hojaResumen) return;
+
+  var ultimaFila = hojaResumen.getLastRow();
+  if (ultimaFila < 5) return;
+
+  var filas = ultimaFila - 4;
+  var rango = hojaResumen.getRange(5, 1, filas, 11);
+
+  rango
+    .setFontFamily('Arial')
+    .setFontSize(10)
+    .setVerticalAlignment('middle')
+    .setBorder(true, true, true, true, true, true, '#dadce0', SpreadsheetApp.BorderStyle.SOLID);
+
+  hojaResumen.getRange(5, 1, filas, 2).setHorizontalAlignment('center');
+  hojaResumen.getRange(5, 3, filas, 1).setHorizontalAlignment('left');
+  hojaResumen.getRange(5, 4, filas, 8).setHorizontalAlignment('center');
+
+  var colores = [];
+  for (var i = 0; i < filas; i++) {
+    var color = (i % 2 === 0) ? '#ffffff' : '#f3f3f3';
+    colores.push(Array(11).fill(color));
+  }
+  rango.setBackgrounds(colores);
+}
+
 function desprotegerHoja(hoja) {
   const protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
     .concat(hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE));
@@ -366,37 +386,31 @@ function obtenerHojaResumen(ss) {
   return ss.getSheets().find(h => h.getName().toLowerCase() === 'resumen') || null;
 }
 
-function aplicarProteccionAHoja(nombreHoja) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const hoja = ss.getSheetByName(nombreHoja);
-  
-  if (!hoja) {
-    Logger.log('ERROR: No se encontró la hoja "' + nombreHoja + '"');
-    return;
+function aplicarProteccionAHoja(nombreHoja, esNueva) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hoja = ss.getSheetByName(nombreHoja);
+  if (!hoja) return;
+
+  var email = Session.getEffectiveUser().getEmail();
+  var adminEmail = 'implementaciones.it@bacarsa.com.ar';
+
+  if (!esNueva) {
+    hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+      .concat(hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE))
+      .forEach(function(p) { try { p.remove(); } catch(e) {} });
   }
-  
-  Logger.log('Aplicando protección a la hoja "' + nombreHoja + '"...');
-  
-  const email = Session.getEffectiveUser().getEmail();
-  const adminEmail = 'implementaciones.it@bacarsa.com.ar';
-  
-  hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
-    .concat(hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE))
-    .forEach(p => { try { p.remove(); } catch(e) {} });
-  
-  const p = hoja.protect().setDescription('Bloqueo hoja');
+
+  var p = hoja.protect().setDescription('Bloqueo hoja');
   p.addEditor(email);
   p.addEditor(adminEmail);
   if (p.canDomainEdit()) p.setDomainEdit(false);
-  
+
   p.setUnprotectedRanges([
     hoja.getRange('C9:D40'),
     hoja.getRange('K9:L40'),
     hoja.getRange('M9:N40'),
     hoja.getRange(1, 15, hoja.getMaxRows(), hoja.getMaxColumns() - 14)
   ]);
-  
-  Logger.log('Protección aplicada exitosamente');
 }
 
 function aplicarProteccionTotal() {
@@ -647,6 +661,7 @@ function eliminarDeResumen(hojaResumen, legajos) {
     });
 
     renumerarResumen();
+    aplicarEstilosResumen(hojaResumen);
 
   } catch (error) {
     Logger.log('Error Fase 1 (RESUMEN eliminar): ' + error.message);
@@ -674,11 +689,7 @@ function eliminarHojasGuardias(ss, hojaResumen, nombres) {
     }
   });
 
-  desprotegerHoja(hojaResumen);
-  try { crearHipervinculosEnResumen(); } catch (e) {
-    Logger.log('Error hipervínculos: ' + e.message);
-  }
-  try { reprotegerResumen(hojaResumen); } catch (e) {}
+  actualizarHipervinculosResumen(hojaResumen);
 
   return { eliminadas: eliminadas, fallidas: fallidas };
 }

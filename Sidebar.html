@@ -21,15 +21,15 @@
       
       <div class="form-group">
         <label for="legajo">Legajo:</label>
-        <input type="text" id="legajo" placeholder="Ej: 3831">
+        <input type="text" id="legajo" placeholder="Ej: 1234">
       </div>
       
       <div style="display: flex; gap: 8px;">
         <button onclick="agregarALista()" class="btn btn-secondary" style="flex: 1;">
-          + Agregar a lista
+          ✅ Agregar a lista
         </button>
         <button onclick="document.getElementById('fileInput').click()" class="btn btn-secondary" style="flex: 1;">
-          📁 Importar Excel
+          📂 Importar Excel
         </button>
       </div>
       
@@ -58,6 +58,13 @@
           <button id="btnLimpiarBusqueda" class="search-clear" onclick="limpiarBusqueda()" style="display:none;">×</button>
         </div>
         <div class="search-count" id="contadorFiltro"></div>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <button onclick="document.getElementById('fileInputEliminar').click()" class="btn btn-secondary" style="font-size: 13px;">
+          📁 Importar legajos desde Excel
+        </button>
+        <input type="file" id="fileInputEliminar" accept=".xlsx,.xls,.csv" style="display: none;" onchange="importarExcelEliminar(event)">
       </div>
       
       <div class="form-group">
@@ -321,6 +328,74 @@
         .agregarGuardiasBatch(JSON.stringify(listaGuardiasAgregar));
     }
     
+    // ============================================
+    // IMPORTAR EXCEL PARA ELIMINAR
+    // ============================================
+    function importarExcelEliminar(event) {
+      var file = event.target.files[0];
+      var mensaje = document.getElementById('mensajeEliminar');
+
+      if (!file) return;
+
+      var extension = file.name.split('.').pop().toLowerCase();
+      if (['xlsx', 'xls', 'csv'].indexOf(extension) === -1) {
+        mostrarMensaje(mensaje, 'Por favor sube un archivo Excel (.xlsx, .xls) o CSV', 'error');
+        return;
+      }
+
+      mostrarMensaje(mensaje, 'Procesando archivo...', 'success');
+
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          var data = new Uint8Array(e.target.result);
+          var workbook = XLSX.read(data, { type: 'array' });
+          var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          var rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+          var legajosExcel = new Set();
+          for (var i = 1; i < rows.length; i++) {
+            var row = rows[i];
+            var legajo = (row[1] || row[0] || '').toString().trim();
+            if (legajo) legajosExcel.add(legajo);
+          }
+
+          var botones = document.querySelectorAll('#guardiasBotones .guardia-btn');
+          var seleccionados = 0;
+          var noEncontrados = 0;
+
+          botones.forEach(function(btn) {
+            var legajoBtn = btn.getAttribute('data-legajo').toString();
+            if (legajosExcel.has(legajoBtn)) {
+              btn.classList.add('selected');
+              btn.style.display = 'block';
+              seleccionados++;
+              legajosExcel.delete(legajoBtn);
+            }
+          });
+
+          noEncontrados = legajosExcel.size;
+
+          var msg = '✅ ' + seleccionados + ' guardia(s) seleccionado(s) desde el archivo';
+          if (noEncontrados > 0) {
+            msg += '\n⚠ ' + noEncontrados + ' legajo(s) del Excel no encontrados en la lista';
+          }
+          mostrarMensaje(mensaje, msg, seleccionados > 0 ? 'success' : 'error');
+
+        } catch (error) {
+          mostrarMensaje(mensaje, 'Error al procesar el archivo: ' + error.message, 'error');
+        }
+
+        event.target.value = '';
+      };
+
+      reader.onerror = function() {
+        mostrarMensaje(mensaje, 'Error al leer el archivo', 'error');
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
     // ============================================
     // BUSCADOR DE GUARDIAS
     // ============================================

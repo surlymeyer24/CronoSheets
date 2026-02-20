@@ -1,48 +1,73 @@
 <style>
+
+  /* ============================
+     RESET GLOBAL
+     Elimina márgenes y paddings por defecto del navegador.
+     box-sizing: border-box hace que padding y border
+     se incluyan dentro del ancho/alto declarado.
+     ============================ */
   * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
   }
-  
+
+  /* ============================
+     BODY - Tipografía y fondo base
+     Fuente estilo Google (Material Design).
+     ============================ */
   body {
-    font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     font-size: 14px;
     color: #202124;
     background-color: #fff;
     padding: 0;
     margin: 0;
   }
-  
+
+  /* ============================
+     LAYOUT - Contenedor principal y secciones
+     .container: padding general del sidebar.
+     .section: cada bloque (Agregar, Eliminar, Confirmar).
+     ============================ */
   .container {
     padding: 20px;
   }
-  
+
   .section {
     margin-bottom: 30px;
   }
-  
+
+  /* ============================
+     TÍTULOS DE SECCIÓN (h2)
+     Azul oscuro institucional con línea roja inferior.
+     ============================ */
   h2 {
     font-size: 18px;
-    font-weight: 500;
-    color: #1a73e8;
+    font-weight: 500, bold;
+    color: #070A52;
     margin-bottom: 20px;
     padding-bottom: 10px;
-    border-bottom: 2px solid #e8eaed;
+    border-bottom: 2px solid #F15A59;
   }
-  
+
+  /* ============================
+     FORMULARIOS - Grupos, labels e inputs
+     .form-group: espaciado entre campos.
+     input/select: borde neutro, focus azul oscuro.
+     ============================ */
   .form-group {
     margin-bottom: 16px;
   }
-  
+
   label {
     display: block;
     font-weight: 500;
     margin-bottom: 6px;
-    color: #5f6368;
+    color: #070A52;
     font-size: 13px;
   }
-  
+
   input[type="text"],
   select {
     width: 100%;
@@ -53,19 +78,27 @@
     font-family: inherit;
     transition: border-color 0.2s;
   }
-  
+
   input[type="text"]:focus,
   select:focus {
     outline: none;
-    border-color: #1a73e8;
-    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.1);
+    border-color: #070A52;
+    box-shadow: 0 0 0 2px rgba(7, 10, 82, 0.15);
   }
-  
+
   select {
     cursor: pointer;
     background-color: #fff;
   }
-  
+
+  /* ============================
+     BOTONES - Base y variantes de color
+     .btn: estilos compartidos (ancho completo, transiciones).
+     primary: azul oscuro (#070A52).
+     danger: rojo fuerte (#D21312).
+     secondary: rojo medio (#ED2B2A).
+     success: azul oscuro (confirmar = acción segura).
+     ============================ */
   .btn {
     width: 100%;
     padding: 12px 24px;
@@ -78,67 +111,74 @@
     font-family: inherit;
     text-transform: none;
   }
-  
+
   .btn:hover {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
   }
-  
+
   .btn:active {
     transform: scale(0.98);
   }
-  
+
   .btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
+
   .btn-primary {
-    background-color: #1a73e8;
+    background-color: #070A52;
     color: #fff;
   }
-  
+
   .btn-primary:hover:not(:disabled) {
-    background-color: #1765cc;
+    background-color: #0b0f6e;
   }
-  
+
   .btn-danger {
-    background-color: #d93025;
+    background-color: #D21312;
     color: #fff;
   }
-  
+
   .btn-danger:hover:not(:disabled) {
-    background-color: #c5221f;
+    background-color: #ED2B2A;
   }
-  
+
   .btn-secondary {
-    background-color: #5f6368;
+    background-color: #ED2B2A;
     color: #fff;
   }
-  
+
   .btn-secondary:hover:not(:disabled) {
-    background-color: #4a4f54;
+    background-color: #D21312;
   }
-  
+
   .btn-success {
-    background-color: #1e8e3e;
+    background-color: #070A52;
     color: #fff;
   }
-  
+
   .btn-success:hover:not(:disabled) {
-    background-color: #188038;
+    background-color: #0b0f6e;
   }
-  
+
+  /* ============================
+     LISTA DE GUARDIAS A AGREGAR
+     .lista-container: envuelve la lista previa al envío.
+     .lista-titulo: encabezado "Guardias a agregar (N)".
+     .lista-item: cada fila con nombre + botón quitar (×).
+     .btn-remove: la × roja para quitar de la lista.
+     ============================ */
   .lista-container {
     margin-top: 12px;
   }
-  
+
   .lista-titulo {
     font-size: 12px;
     font-weight: 500;
-    color: #5f6368;
+    color: #070A52;
     margin-bottom: 8px;
   }
-  
+
   .lista-item {
     display: flex;
     justify-content: space-between;
@@ -150,15 +190,15 @@
     margin-bottom: 6px;
     font-size: 13px;
   }
-  
+
   .lista-item span {
     flex: 1;
   }
-  
+
   .btn-remove {
     background: none;
     border: none;
-    color: #d93025;
+    color: #D21312;
     font-size: 24px;
     font-weight: bold;
     cursor: pointer;
@@ -168,15 +208,23 @@
     line-height: 20px;
     text-align: center;
   }
-  
+
   .btn-remove:hover {
-    color: #a50e0e;
+    color: #ED2B2A;
   }
-  
+
   select[multiple] {
     height: auto;
   }
-  
+
+  /* ============================
+     BUSCADOR DE GUARDIAS (sección Eliminar)
+     .search-box: contenedor relativo para posicionar ícono y ×.
+     .search-box input: campo redondeado, focus azul oscuro.
+     .search-icon: lupa posicionada a la izquierda.
+     .search-clear: botón × para limpiar el campo.
+     .search-count: texto "3 de 150 guardias" debajo del buscador.
+     ============================ */
   .search-box {
     position: relative;
     display: flex;
@@ -196,8 +244,8 @@
 
   .search-box input:focus {
     outline: none;
-    border-color: #1a73e8;
-    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+    border-color: #070A52;
+    box-shadow: 0 0 0 2px rgba(7, 10, 82, 0.15);
     background-color: #fff;
   }
 
@@ -230,11 +278,17 @@
   .search-count {
     display: none;
     font-size: 11px;
-    color: #5f6368;
+    color: #070A52;
     margin-top: 4px;
     padding-left: 12px;
   }
 
+  /* ============================
+     BOTONES DE GUARDIAS (sección Eliminar)
+     .guardias-botones: contenedor scrolleable con lista de guardias.
+     .guardia-btn: cada botón-guardia clickeable.
+     .guardia-btn.selected: estado seleccionado (rojo para eliminar).
+     ============================ */
   .guardias-botones {
     max-height: 300px;
     overflow-y: auto;
@@ -243,7 +297,7 @@
     padding: 8px;
     background-color: #f8f9fa;
   }
-  
+
   .guardia-btn {
     display: block;
     width: 100%;
@@ -258,65 +312,91 @@
     transition: all 0.2s;
     font-family: inherit;
   }
-  
+
   .guardia-btn:hover {
-    border-color: #5f6368;
-    background-color: #f1f3f4;
+    border-color: #070A52;
+    background-color: #f0f0f8;
   }
-  
+
   .guardia-btn.selected {
-    background-color: #fce8e6;
-    border-color: #d93025;
-    color: #c5221f;
+    background-color: #fde9e8;
+    border-color: #D21312;
+    color: #D21312;
     font-weight: 500;
   }
-  
+
   .guardia-btn:last-child {
     margin-bottom: 0;
   }
-  
+
+  /* ============================
+     ESTADOS DE CARGA
+     .loading: texto centrado "Cargando..." mientras se
+     obtienen datos del servidor.
+     ============================ */
   .loading {
     text-align: center;
-    color: #5f6368;
+    color: #070A52;
     padding: 20px;
     font-size: 13px;
   }
-  
+
+  /* ============================
+     TEXTO INFORMATIVO
+     .info-text: párrafos descriptivos dentro de las secciones.
+     ============================ */
   .info-text {
     font-size: 13px;
     color: #5f6368;
     margin-bottom: 16px;
     line-height: 1.5;
   }
-  
+
+  /* ============================
+     MENSAJES DE RESULTADO
+     .mensaje: contenedor oculto por defecto (display:none).
+     .mensaje.success: fondo azul claro para operaciones exitosas.
+     .mensaje.error: fondo rojo claro para errores.
+     white-space: pre-line respeta los \n del texto.
+     ============================ */
   .mensaje {
     margin-top: 12px;
     padding: 12px;
     border-radius: 4px;
     font-size: 13px;
     display: none;
-    white-space: pre-line; /* Para que respete los saltos de línea */
+    white-space: pre-line;
   }
-  
+
   .mensaje.success {
-    background-color: #e6f4ea;
-    color: #137333;
-    border: 1px solid #c6e6c3;
+    background-color: #ecedf8;
+    color: #070A52;
+    border: 1px solid #b0b3d6;
   }
-  
+
   .mensaje.error {
-    background-color: #fce8e6;
-    color: #c5221f;
-    border: 1px solid #f6aea9;
+    background-color: #fde9e8;
+    color: #D21312;
+    border: 1px solid #F15A59;
   }
-  
+
+  /* ============================
+     SEPARADOR ENTRE SECCIONES
+     .divider: línea con degradado rojo→azul entre secciones.
+     ============================ */
   .divider {
-    height: 1px;
-    background-color: #e8eaed;
+    height: 2px;
+    background: linear-gradient(to right, #D21312, #070A52);
     margin: 30px 0;
+    border: none;
+    border-radius: 1px;
   }
-  
-  /* Animación para mensajes */
+
+  /* ============================
+     ANIMACIÓN DE MENSAJES
+     fadeIn: los mensajes aparecen con un efecto suave
+     de opacidad + desplazamiento desde arriba.
+     ============================ */
   @keyframes fadeIn {
     from {
       opacity: 0;
@@ -327,7 +407,7 @@
       transform: translateY(0);
     }
   }
-  
+
   .mensaje {
     animation: fadeIn 0.3s ease-out;
   }
