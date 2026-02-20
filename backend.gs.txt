@@ -1,0 +1,544 @@
+function doGet() {
+  return HtmlService.createHtmlOutput("OK");
+}
+function runAgregarGuardia(nombre, legajo) {
+  // Simplemente llama a la función original
+  return agregarGuardia(nombre, legajo);
+
+}
+// ============================================
+// MENÚ PERSONALIZADO
+// ============================================
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('⚙️ Gestión de Guardias')
+    .addItem('📋 Abrir Panel', 'mostrarSidebar')
+    .addToUi();
+}
+
+function mostrarSidebar() {
+  const html = HtmlService.createTemplateFromFile('Sidebar')
+    .evaluate()
+    .setTitle('Gestión de Guardias')
+    .setWidth(350);
+  
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+// Para incluir archivos HTML
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+// ============================================
+// AGREGAR GUARDIA
+// ============================================
+function agregarGuardia(nombre, legajo) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaResumen = ss.getSheetByName('Resumen');
+  
+  try {
+    if (!hojaResumen) throw new Error('No se encontró la hoja "Resumen"');
+    
+    Logger.log('=== INICIO AGREGAR GUARDIA (LIMPIEZA TOTAL) ===');
+
+    // 1. ELIMINAR ABSOLUTAMENTE TODAS LAS PROTECCIONES
+    // Esto elimina protecciones de HOJA y de RANGOS específicos
+    const todasLasProtecciones = hojaResumen.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+      .concat(hojaResumen.getProtections(SpreadsheetApp.ProtectionType.RANGE));
+    
+    Logger.log('Protecciones encontradas para eliminar: ' + todasLasProtecciones.length);
+    
+    todasLasProtecciones.forEach(p => {
+      try {
+        if (p.canEdit()) {
+          p.remove();
+        }
+      } catch (e) {
+        Logger.log('No se pudo quitar una protección: ' + e.message);
+      }
+    });
+    
+    // Forzamos la aplicación de la desprotección antes de tocar las celdas
+    SpreadsheetApp.flush(); 
+
+    // 2. OBTENER DATOS Y VALIDAR
+    const datos = hojaResumen.getDataRange().getValues();
+    for (let i = 1; i < datos.length; i++) {
+      if (datos[i][3] && datos[i][3].toString() === legajo.toString()) {
+        throw new Error('Ya existe un guardia con el legajo ' + legajo);
+      }
+    }
+    
+    // 3. BUSCAR POSICIÓN ALFABÉTICA
+    let filaInsertar = -1;
+    for (let i = 4; i < datos.length; i++) {
+      const nombreExistente = datos[i][2] ? datos[i][2].toString().trim() : '';
+      if (nombreExistente) {
+        if (nombre.localeCompare(nombreExistente, 'es', { sensitivity: 'base' }) < 0) {
+          filaInsertar = i + 1;
+          break;
+        }
+      }
+    }
+    if (filaInsertar === -1) filaInsertar = datos.length + 1;
+
+    // 4. OPERACIÓN DE ESCRITURA
+    Logger.log('Insertando fila en: ' + filaInsertar);
+    hojaResumen.insertRowBefore(filaInsertar);
+    
+    // Escribimos los datos básicos
+    hojaResumen.getRange(filaInsertar, 1, 1, 11).setValues([[
+      '', '', nombre, legajo, '128:00', '0:00', '0:00', '0:00', '95:00', '33:00', ''
+    ]]);
+    
+    // 5. PROCESOS AUXILIARES
+    crearHojaDesdeModelo(nombre);
+    moverHojaAPosicionAlfabetica(nombre);
+    renumerarResumen();
+    crearHipervinculosEnResumen();
+    
+    // 6. REPROTECCIÓN FINAL
+    // Llamamos a la función de reproteger que ya tienes configurada
+    reprotegerResumen(hojaResumen);
+    SpreadsheetApp.flush();
+    
+    return {
+      success: true,
+      message: '✅ Guardia ' + nombre + ' agregado correctamente.'
+    };
+    
+  } catch (error) {
+    Logger.log('ERROR CRÍTICO: ' + error.message);
+    // Intentar cerrar la hoja aunque haya fallado
+    try { reprotegerResumen(hojaResumen); } catch(e) {}
+    return { success: false, message: 'Error: ' + error.message };
+  }
+}
+
+function crearHojaDesdeModelo(nombreGuardia) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaModelo = ss.getSheetByName('modelo');
+  
+  if (!hojaModelo) {
+    throw new Error('No existe la hoja "modelo"');
+  }
+  
+  // Verificar si ya existe la hoja
+  if (ss.getSheetByName(nombreGuardia)) {
+    return; // Ya existe, no crear duplicado
+  }
+  
+  // Copiar modelo
+  const nuevaHoja = hojaModelo.copyTo(ss);
+  nuevaHoja.setName(nombreGuardia);
+  
+  // Poner nombre en título (B1:N3)
+  const rango = nuevaHoja.getRange('B1:N3');
+  rango.breakApart();
+  rango.merge();
+  rango.setValue(nombreGuardia);
+  rango.setHorizontalAlignment('center');
+  rango.setVerticalAlignment('middle');
+  rango.setFontSize(37);
+  rango.setFontWeight('bold');
+}
+
+function ordenarHojasPorNombre() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojasIgnoradas = ['Resumen', 'Indice', 'modelo'];
+  
+  const hojas = ss.getSheets().filter(
+    h => !hojasIgnoradas.includes(h.getName())
+  );
+  
+  // Ordenar alfabéticamente
+  hojas.sort((a, b) => {
+    return a.getName().localeCompare(b.getName(), 'es', { sensitivity: 'base' });
+  });
+  
+  // Reposicionar
+  hojas.forEach((hoja, index) => {
+    ss.setActiveSheet(hoja);
+    ss.moveActiveSheet(index + 4); // después de Resumen, Indice, modelo
+  });
+}
+
+function moverHojaAPosicionAlfabetica(nombreHoja) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojasIgnoradas = ['Resumen', 'Indice', 'modelo'];
+  
+  Logger.log('Moviendo hoja "' + nombreHoja + '" a su posición alfabética...');
+  
+  // Obtener todas las hojas excepto las ignoradas
+  const hojas = ss.getSheets().filter(
+    h => !hojasIgnoradas.includes(h.getName())
+  );
+  
+  // Ordenar alfabéticamente por nombre
+  const nombresOrdenados = hojas
+    .map(h => h.getName())
+    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  
+  Logger.log('Hojas ordenadas: ' + JSON.stringify(nombresOrdenados));
+  
+  // Encontrar la posición donde debería estar
+  const posicionEnArray = nombresOrdenados.indexOf(nombreHoja);
+  
+  if (posicionEnArray === -1) {
+    Logger.log('ERROR: No se encontró la hoja en la lista');
+    return;
+  }
+  
+  // La posición en el spreadsheet es: 3 hojas ignoradas + posición en array + 1
+  const posicionFinal = 3 + posicionEnArray + 1;
+  
+  Logger.log('Posición objetivo: ' + posicionFinal);
+  
+  // Mover la hoja
+  const hoja = ss.getSheetByName(nombreHoja);
+  if (hoja) {
+    ss.setActiveSheet(hoja);
+    ss.moveActiveSheet(posicionFinal);
+    Logger.log('Hoja movida exitosamente');
+  }
+}
+
+function ordenarResumenAlfabeticamente() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaResumen = ss.getSheetByName('Resumen');
+  
+  if (!hojaResumen) return;
+  
+  const ultimaFila = hojaResumen.getLastRow();
+  if (ultimaFila <= 4) return; // solo headers (ahora empiezan en fila 5)
+  
+  const rango = hojaResumen.getRange(5, 1, ultimaFila - 4, hojaResumen.getLastColumn());
+  rango.sort([{column: 2, ascending: true}]); // ordenar por columna B (nombres)
+  
+  renumerarResumen();
+}
+
+function renumerarResumen() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaResumen = ss.getSheetByName('Resumen');
+  
+  if (!hojaResumen) return;
+  
+  const ultimaFila = hojaResumen.getLastRow();
+  if (ultimaFila <= 4) return; // Si no hay datos después de fila 4
+  
+  Logger.log('Renumerando columna B desde fila 5 hasta ' + ultimaFila);
+  
+  // Renumerar columna B desde fila 5
+  const datos = [];
+  for (let i = 5; i <= ultimaFila; i++) {
+    datos.push([i - 4]); // fila 5 = número 1
+  }
+  hojaResumen.getRange(5, 2, datos.length, 1).setValues(datos); // Columna B, desde fila 5
+}
+
+function reprotegerResumen(hojaResumen) {
+  try {
+    const emailEditor = Session.getEffectiveUser().getEmail();
+    const adminEmail = 'desarrollo.it@bacarsa.com.ar'; // Tu email de admin
+
+    // 1. ELIMINAR PROTECCIONES EXISTENTES (Limpieza total)
+    // Eliminamos protecciones de hoja
+    const protHoja = hojaResumen.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    protHoja.forEach(p => {
+      try { p.remove(); } catch (e) { Logger.log('No se pudo quitar una prot. de hoja: ' + e.message); }
+    });
+
+    // Eliminamos protecciones de rango
+    const protRango = hojaResumen.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+    protRango.forEach(p => {
+      try { p.remove(); } catch (e) { Logger.log('No se pudo quitar una prot. de rango: ' + e.message); }
+    });
+
+    SpreadsheetApp.flush(); // Forzar aplicación de la limpieza
+
+    // 2. CREAR LA NUEVA PROTECCIÓN
+    const proteccion = hojaResumen.protect().setDescription('Protección Automática de Gestión');
+
+    // 3. CONFIGURAR EDITORES
+    // Quitamos a todos y nos aseguramos de que el ejecutor y el admin queden
+    proteccion.removeEditors(proteccion.getEditors());
+    proteccion.addEditors([emailEditor, adminEmail]);
+    
+    if (proteccion.canDomainEdit()) {
+      proteccion.setDomainEdit(false);
+    }
+
+    // 4. DEFINIR RANGOS EXCEPCIONES (Lo que el usuario SÍ puede tocar)
+    // Ajusta estos rangos según lo que necesites que el usuario edite manualmente
+    const rangosEditables = [
+      hojaResumen.getRange("B5:D500"), // N°, Nombre y Legajo
+      hojaResumen.getRange("L5:L500")  // Columna de observaciones o extras
+    ];
+    proteccion.setUnprotectedRanges(rangosEditables);
+
+    Logger.log('✅ Resumen reprotegido exitosamente.');
+
+  } catch (error) {
+    Logger.log('⚠️ Error no crítico en reprotegerResumen: ' + error.message);
+    // No lanzamos el error (throw) para que la función principal termine con éxito
+  }
+}
+function aplicarProteccionAHoja(nombreHoja) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hoja = ss.getSheetByName(nombreHoja);
+  
+  if (!hoja) {
+    Logger.log('ERROR: No se encontró la hoja "' + nombreHoja + '"');
+    return;
+  }
+  
+  Logger.log('Aplicando protección a la hoja "' + nombreHoja + '"...');
+  
+  const email = Session.getEffectiveUser().getEmail();
+  
+  // Eliminar protecciones previas
+  hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+      .forEach(p => p.remove());
+  
+  // Crear nueva protección
+  const p = hoja.protect().setDescription('Bloqueo hoja');
+  p.removeEditors(p.getEditors());
+  p.addEditors([email, 'desarrollo.it@bacarsa.com.ar']);
+  if (p.canDomainEdit()) p.setDomainEdit(false);
+  
+  // Rangos editables
+  p.setUnprotectedRanges([
+    hoja.getRange('C9:D40'),
+    hoja.getRange('K9:L40'),
+    hoja.getRange('M9:N40'),
+    hoja.getRange(1, 15, hoja.getMaxRows(), hoja.getMaxColumns() - 14)
+  ]);
+  
+  Logger.log('Protección aplicada exitosamente');
+}
+
+function aplicarProteccionTotal() {
+  try {
+    Logger.log('=== APLICAR PROTECCIÓN TOTAL ===');
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const email = Session.getEffectiveUser().getEmail();
+    const hojas = ss.getSheets();
+    
+    let hojasProtegidas = 0;
+    
+    hojas.forEach(hoja => {
+      const nombreHoja = hoja.getName();
+      Logger.log('Protegiendo hoja: ' + nombreHoja);
+      
+      // Eliminar protecciones previas
+      hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+          .forEach(p => p.remove());
+      
+      const p = hoja.protect().setDescription('Bloqueo hoja');
+      p.removeEditors(p.getEditors());
+      p.addEditors([email, 'desarrollo.it@bacarsa.com.ar']);
+      if (p.canDomainEdit()) p.setDomainEdit(false);
+      
+      if (nombreHoja === 'Resumen') {
+        p.setUnprotectedRanges([
+          hoja.getRange('B:D'),
+          hoja.getRange('L:L')
+        ]);
+      } else {
+        p.setUnprotectedRanges([
+          hoja.getRange('C9:D40'),
+          hoja.getRange('K9:L40'),
+          hoja.getRange('M9:N40'),
+          hoja.getRange(1, 15, hoja.getMaxRows(), hoja.getMaxColumns() - 14)
+        ]);
+      }
+      
+      hojasProtegidas++;
+    });
+    
+    SpreadsheetApp.flush();
+    
+    Logger.log('=== FIN PROTECCIÓN TOTAL ===');
+    Logger.log('Total hojas protegidas: ' + hojasProtegidas);
+    
+    return {
+      success: true,
+      message: '✅ Cambios confirmados exitosamente\n\n' +
+               '✓ ' + hojasProtegidas + ' hojas protegidas\n' +
+               '✓ Listo para usar'
+    };
+    
+  } catch (error) {
+    Logger.log('ERROR: ' + error.message);
+    return {
+      success: false,
+      message: 'Error al aplicar protección: ' + error.message
+    };
+  }
+}
+
+function crearHipervinculosEnResumen() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaResumen = ss.getSheetByName('Resumen');
+  
+  if (!hojaResumen) return;
+  
+  const hojasIgnoradas = ['Indice', 'Resumen', 'modelo'];
+  
+  // Obtener hojas válidas con su nombre
+  const hojasValidas = ss.getSheets()
+    .filter(h => !hojasIgnoradas.includes(h.getName()))
+    .map(h => ({
+      nombre: h.getName(),
+      gridId: h.getSheetId()
+    }));
+  
+  // Ordenar alfabéticamente
+  hojasValidas.sort((a, b) => 
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
+  );
+  
+  const filaInicio = 5; // Los datos empiezan en fila 5
+  const ultimaFila = hojaResumen.getLastRow();
+  
+  // Limpiar hipervínculos existentes
+  if (ultimaFila >= filaInicio) {
+    hojaResumen.getRange(filaInicio, 11, ultimaFila - filaInicio + 1, 1).clearContent();
+  }
+  
+  // Crear nuevos hipervínculos
+  hojasValidas.forEach((hoja, index) => {
+    const fila = filaInicio + index;
+    const formula = `=HYPERLINK("#gid=${hoja.gridId}"; "VER")`;
+    hojaResumen.getRange(fila, 11).setFormula(formula);
+  });
+}
+
+// ============================================
+// ELIMINAR GUARDIA
+// ============================================
+function obtenerListaGuardias() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaResumen = ss.getSheetByName('Resumen');
+  
+  if (!hojaResumen) {
+    return [];
+  }
+  
+  const datos = hojaResumen.getDataRange().getValues();
+  const guardias = [];
+  
+  Logger.log('=== OBTENER LISTA GUARDIAS ===');
+  Logger.log('Total filas: ' + datos.length);
+  
+  // Columna C = nombre (índice 2), Columna D = legajo (índice 3)
+  // Los datos empiezan en fila 5 (índice 4)
+  for (let i = 4; i < datos.length; i++) { // empezar desde fila 5 (índice 4)
+    if (datos[i][2] && datos[i][3]) { // tiene nombre y legajo
+      guardias.push({
+        nombre: datos[i][2],
+        legajo: datos[i][3],
+        fila: i + 1
+      });
+    }
+  }
+  
+  Logger.log('Total guardias encontrados: ' + guardias.length);
+  
+  return guardias;
+}
+
+function eliminarGuardia(legajo) {
+  let proteccionesResumen = [];
+  
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const hojaResumen = ss.getSheetByName('Resumen');
+    
+    if (!hojaResumen) {
+      throw new Error('No se encontró la hoja "Resumen"');
+    }
+    
+    Logger.log('=== ELIMINAR GUARDIA ===');
+    Logger.log('Legajo a eliminar: ' + legajo);
+    
+    // DESPROTEGER RESUMEN TEMPORALMENTE
+    Logger.log('Desprotegiendo Resumen...');
+    proteccionesResumen = hojaResumen.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    proteccionesResumen.forEach(p => p.remove());
+    
+    const datos = hojaResumen.getDataRange().getValues();
+    let nombreGuardia = '';
+    let filaAEliminar = -1;
+    
+    // Buscar el guardia por legajo (columna D = índice 3)
+    // Nombre en columna C = índice 2
+    // Los datos empiezan en fila 5 (índice 4)
+    for (let i = 4; i < datos.length; i++) { // empezar desde fila 5 (índice 4)
+      if (datos[i][3] && datos[i][3].toString() === legajo.toString()) {
+        nombreGuardia = datos[i][2];
+        filaAEliminar = i + 1;
+        Logger.log('Guardia encontrado en fila ' + filaAEliminar + ': ' + nombreGuardia);
+        break;
+      }
+    }
+    
+    if (filaAEliminar === -1) {
+      throw new Error('No se encontró el guardia con legajo ' + legajo);
+    }
+    
+    // Eliminar fila del resumen
+    Logger.log('Eliminando fila ' + filaAEliminar + ' del Resumen...');
+    hojaResumen.deleteRow(filaAEliminar);
+    
+    // Eliminar hoja individual
+    const hojaGuardia = ss.getSheetByName(nombreGuardia);
+    if (hojaGuardia) {
+      Logger.log('Eliminando hoja: ' + nombreGuardia);
+      ss.deleteSheet(hojaGuardia);
+    }
+    
+    // Reordenar y actualizar
+    Logger.log('Renumerando...');
+    renumerarResumen();
+    
+    Logger.log('Actualizando hipervínculos...');
+    crearHipervinculosEnResumen();
+    
+    // REPROTEGER RESUMEN
+    Logger.log('Reprotegiendo Resumen...');
+    reprotegerResumen(hojaResumen);
+    
+    SpreadsheetApp.flush();
+    
+    Logger.log('=== FIN ELIMINAR GUARDIA ===');
+    
+    return {
+      success: true,
+      message: '✅ Guardia eliminado exitosamente: ' + nombreGuardia + '\n\n' +
+               '✓ Eliminado del Resumen\n' +
+               '✓ Hoja individual eliminada\n' +
+               '✓ Numeración actualizada'
+    };
+    
+  } catch (error) {
+    Logger.log('ERROR: ' + error.message);
+    
+    // Si hubo error, reproteger igual
+    if (proteccionesResumen.length === 0) {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const hojaResumen = ss.getSheetByName('Resumen');
+      if (hojaResumen) {
+        reprotegerResumen(hojaResumen);
+      }
+    }
+    
+    return {
+      success: false,
+      message: 'Error: ' + error.message
+    };
+  }
+}

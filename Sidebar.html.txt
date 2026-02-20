@@ -1,0 +1,439 @@
+Sidebar.html
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <!-- SheetJS para leer archivos Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <?!= include('Estilos'); ?>
+</head>
+<body>
+  
+  <div class="container">
+    
+    <!-- SECCIÓN AGREGAR GUARDIA -->
+    <div class="section">
+      <h2>➕ Agregar Guardia</h2>
+      
+      <div class="form-group">
+        <label for="nombre">Nombre completo:</label>
+        <input type="text" id="nombre" placeholder="APELLIDO, Nombre">
+      </div>
+      
+      <div class="form-group">
+        <label for="legajo">Legajo:</label>
+        <input type="text" id="legajo" placeholder="Ej: 3831">
+      </div>
+      
+      <div style="display: flex; gap: 8px;">
+        <button onclick="agregarALista()" class="btn btn-secondary" style="flex: 1;">
+          + Agregar a lista
+        </button>
+        <button onclick="document.getElementById('fileInput').click()" class="btn btn-secondary" style="flex: 1;">
+          📁 Importar Excel
+        </button>
+      </div>
+      
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;" onchange="importarExcel(event)">
+      
+      <div id="listaAgregar" class="lista-container"></div>
+      
+      <button onclick="procesarTodosAgregar()" class="btn btn-primary" id="btnProcesarAgregar" style="display:none; margin-top: 12px;">
+        Agregar Todos
+      </button>
+      
+      <div id="mensajeAgregar" class="mensaje"></div>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <!-- SECCIÓN ELIMINAR GUARDIA -->
+    <div class="section">
+      <h2>🗑️ Eliminar Guardia</h2>
+      
+      <div class="form-group">
+        <label>Seleccionar guardias (click para seleccionar/deseleccionar):</label>
+        <div id="guardiasBotones" class="guardias-botones">
+          <div class="loading">Cargando...</div>
+        </div>
+      </div>
+      
+      <button onclick="eliminarGuardias()" class="btn btn-danger">
+        Eliminar Seleccionados
+      </button>
+      
+      <div id="mensajeEliminar" class="mensaje"></div>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <!-- SECCIÓN CONFIRMAR -->
+    <div class="section">
+      <h2>✅ Confirmar Cambios</h2>
+      
+      <p class="info-text">
+        Cuando termines de agregar/eliminar guardias, presiona confirmar para aplicar los cambios finales.
+      </p>
+      
+      <button onclick="confirmarCambios()" class="btn btn-success">
+        Confirmar
+      </button>
+      
+      <div id="mensajeConfirmar" class="mensaje"></div>
+    </div>
+    
+  </div>
+  
+  <script>
+    // ============================================
+    // VARIABLES GLOBALES
+    // ============================================
+    let listaGuardiasAgregar = [];
+    
+    // ============================================
+    // CARGAR LISTA DE GUARDIAS AL ABRIR
+    // ============================================
+    window.onload = function() {
+      cargarListaGuardias();
+    };
+    
+    function cargarListaGuardias() {
+      google.script.run
+        .withSuccessHandler(function(guardias) {
+          const container = document.getElementById('guardiasBotones');
+          container.innerHTML = '';
+          
+          if (guardias.length === 0) {
+            container.innerHTML = '<div class="loading">No hay guardias disponibles</div>';
+          } else {
+            guardias.forEach(function(g) {
+              const btn = document.createElement('button');
+              btn.className = 'guardia-btn';
+              btn.setAttribute('data-legajo', g.legajo);
+              btn.textContent = g.nombre + ' - ' + g.legajo;
+              btn.onclick = function() {
+                this.classList.toggle('selected');
+              };
+              container.appendChild(btn);
+            });
+          }
+        })
+        .withFailureHandler(function(error) {
+          alert('Error al cargar guardias: ' + error);
+        })
+        .obtenerListaGuardias();
+    }
+    
+    // ============================================
+    // AGREGAR A LISTA
+    // ============================================
+    function agregarALista() {
+      const nombre = document.getElementById('nombre').value.trim();
+      const legajo = document.getElementById('legajo').value.trim();
+      const mensaje = document.getElementById('mensajeAgregar');
+      
+      // Validaciones
+      if (!nombre || !legajo) {
+        mostrarMensaje(mensaje, 'Por favor completa todos los campos', 'error');
+        return;
+      }
+      
+      // Verificar si ya está en la lista
+      if (listaGuardiasAgregar.some(g => g.legajo === legajo)) {
+        mostrarMensaje(mensaje, 'Este legajo ya está en la lista', 'error');
+        return;
+      }
+      
+      // Agregar a la lista
+      listaGuardiasAgregar.push({ nombre: nombre, legajo: legajo });
+      
+      // Limpiar campos
+      document.getElementById('nombre').value = '';
+      document.getElementById('legajo').value = '';
+      
+      // Actualizar vista
+      actualizarListaAgregar();
+      
+      // Mostrar botón procesar
+      document.getElementById('btnProcesarAgregar').style.display = 'block';
+      
+      mensaje.textContent = '';
+    }
+    
+    function actualizarListaAgregar() {
+      const container = document.getElementById('listaAgregar');
+      
+      if (listaGuardiasAgregar.length === 0) {
+        container.innerHTML = '';
+        document.getElementById('btnProcesarAgregar').style.display = 'none';
+        return;
+      }
+      
+      let html = '<div class="lista-titulo">Guardias a agregar (' + listaGuardiasAgregar.length + '):</div>';
+      
+      listaGuardiasAgregar.forEach(function(g, index) {
+        html += '<div class="lista-item">';
+        html += '<span>' + g.nombre + ' (Legajo: ' + g.legajo + ')</span>';
+        html += '<button onclick="quitarDeLista(' + index + ')" class="btn-remove">×</button>';
+        html += '</div>';
+      });
+      
+      container.innerHTML = html;
+    }
+    
+    function quitarDeLista(index) {
+      listaGuardiasAgregar.splice(index, 1);
+      actualizarListaAgregar();
+    }
+    
+    // ============================================
+    // IMPORTAR EXCEL
+    // ============================================
+    function importarExcel(event) {
+      const file = event.target.files[0];
+      const mensaje = document.getElementById('mensajeAgregar');
+      
+      if (!file) return;
+      
+      // Verificar extensión
+      const extension = file.name.split('.').pop().toLowerCase();
+      if (!['xlsx', 'xls', 'csv'].includes(extension)) {
+        mostrarMensaje(mensaje, 'Por favor sube un archivo Excel (.xlsx, .xls) o CSV', 'error');
+        return;
+      }
+      
+      mostrarMensaje(mensaje, 'Procesando archivo...', 'success');
+      
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          
+          // Leer primera hoja
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+          
+          let importados = 0;
+          let duplicados = 0;
+          
+          // Procesar filas (empezar desde índice 1 si tiene encabezados)
+          for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            
+            // Esperar: Columna A = Nombre, Columna B = Legajo
+            const nombre = row[0] ? row[0].toString().trim() : '';
+            const legajo = row[1] ? row[1].toString().trim() : '';
+            
+            if (nombre && legajo) {
+              // Verificar si ya está en la lista
+              if (listaGuardiasAgregar.some(g => g.legajo === legajo)) {
+                duplicados++;
+                continue;
+              }
+              
+              listaGuardiasAgregar.push({ nombre: nombre, legajo: legajo });
+              importados++;
+            }
+          }
+          
+          actualizarListaAgregar();
+          document.getElementById('btnProcesarAgregar').style.display = 'block';
+          
+          let msg = '✅ ' + importados + ' guardia(s) importado(s)';
+          if (duplicados > 0) {
+            msg += '\n⚠️ ' + duplicados + ' duplicado(s) ignorado(s)';
+          }
+          
+          mostrarMensaje(mensaje, msg, 'success');
+          
+        } catch (error) {
+          mostrarMensaje(mensaje, 'Error al procesar el archivo: ' + error.message, 'error');
+        }
+        
+        // Resetear input
+        event.target.value = '';
+      };
+      
+      reader.onerror = function() {
+        mostrarMensaje(mensaje, 'Error al leer el archivo', 'error');
+      };
+      
+      reader.readAsArrayBuffer(file);
+    }
+    
+    // ============================================
+    // PROCESAR TODOS (AGREGAR)
+    // ============================================
+    function procesarTodosAgregar() {
+      const mensaje = document.getElementById('mensajeAgregar');
+      
+      if (listaGuardiasAgregar.length === 0) {
+        mostrarMensaje(mensaje, 'No hay guardias en la lista', 'error');
+        return;
+      }
+      
+      if (!confirm('¿Agregar ' + listaGuardiasAgregar.length + ' guardia(s)?')) {
+        return;
+      }
+      
+      // Deshabilitar botón
+      const btn = document.getElementById('btnProcesarAgregar');
+      btn.disabled = true;
+      btn.textContent = 'Procesando...';
+      mensaje.textContent = '';
+      
+      // Procesar uno por uno
+      procesarGuardiasRecursivo(0, mensaje, btn);
+    }
+    
+    function procesarGuardiasRecursivo(index, mensaje, btn) {
+      if (index >= listaGuardiasAgregar.length) {
+        // Terminó
+        btn.disabled = false;
+        btn.textContent = 'Agregar Todos';
+        mostrarMensaje(mensaje, '✅ ' + listaGuardiasAgregar.length + ' guardia(s) agregado(s) exitosamente', 'success');
+        listaGuardiasAgregar = [];
+        actualizarListaAgregar();
+        cargarListaGuardias();
+        return;
+      }
+      
+      const guardia = listaGuardiasAgregar[index];
+      btn.textContent = 'Procesando... (' + (index + 1) + '/' + listaGuardiasAgregar.length + ')';
+      
+      google.script.run
+        .withSuccessHandler(function(resultado) {
+          if (!resultado.success) {
+            mostrarMensaje(mensaje, 'Error en ' + guardia.nombre + ': ' + resultado.message, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Agregar Todos';
+            return;
+          }
+          // Continuar con el siguiente
+          procesarGuardiasRecursivo(index + 1, mensaje, btn);
+        })
+        .withFailureHandler(function(error) {
+          mostrarMensaje(mensaje, 'Error: ' + error, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Agregar Todos';
+        })
+        .agregarGuardia(guardia.nombre, guardia.legajo);
+    }
+    
+    // ============================================
+    // ELIMINAR GUARDIAS
+    // ============================================
+    function eliminarGuardias() {
+      const container = document.getElementById('guardiasBotones');
+      const mensaje = document.getElementById('mensajeEliminar');
+      const botonesSeleccionados = container.querySelectorAll('.guardia-btn.selected');
+      
+      if (botonesSeleccionados.length === 0) {
+        mostrarMensaje(mensaje, 'Por favor selecciona al menos un guardia', 'error');
+        return;
+      }
+      
+      const legajos = Array.from(botonesSeleccionados).map(btn => btn.getAttribute('data-legajo'));
+      
+      if (!confirm('¿Estás seguro de eliminar ' + legajos.length + ' guardia(s)?\n\nEsto eliminará:\n- Las filas en Resumen\n- Las hojas individuales')) {
+        return;
+      }
+      
+      // Deshabilitar botón
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Eliminando...';
+      mensaje.textContent = '';
+      
+      // Eliminar uno por uno
+      eliminarGuardiasRecursivo(legajos, 0, mensaje, btn);
+    }
+    
+    function eliminarGuardiasRecursivo(legajos, index, mensaje, btn) {
+      if (index >= legajos.length) {
+        // Terminó
+        btn.disabled = false;
+        btn.textContent = 'Eliminar Seleccionados';
+        mostrarMensaje(mensaje, '✅ ' + legajos.length + ' guardia(s) eliminado(s) exitosamente', 'success');
+        cargarListaGuardias();
+        return;
+      }
+      
+      const legajo = legajos[index];
+      btn.textContent = 'Eliminando... (' + (index + 1) + '/' + legajos.length + ')';
+      
+      google.script.run
+        .withSuccessHandler(function(resultado) {
+          if (!resultado.success) {
+            mostrarMensaje(mensaje, 'Error: ' + resultado.message, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Eliminar Seleccionados';
+            return;
+          }
+          // Continuar con el siguiente
+          eliminarGuardiasRecursivo(legajos, index + 1, mensaje, btn);
+        })
+        .withFailureHandler(function(error) {
+          mostrarMensaje(mensaje, 'Error: ' + error, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Eliminar Seleccionados';
+        })
+        .eliminarGuardia(legajo);
+    }
+    
+    // ============================================
+    // CONFIRMAR CAMBIOS
+    // ============================================
+    function confirmarCambios() {
+      const mensaje = document.getElementById('mensajeConfirmar');
+      
+      if (!confirm('¿Confirmar los cambios realizados?\n\nEsto aplicará protección a todas las hojas.')) {
+        return;
+      }
+      
+      // Deshabilitar botón
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Confirmando...';
+      mensaje.textContent = '';
+      
+      google.script.run
+        .withSuccessHandler(function(resultado) {
+          btn.disabled = false;
+          btn.textContent = 'Confirmar';
+          
+          if (resultado.success) {
+            mostrarMensaje(mensaje, resultado.message, 'success');
+          } else {
+            mostrarMensaje(mensaje, resultado.message, 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          btn.disabled = false;
+          btn.textContent = 'Confirmar';
+          mostrarMensaje(mensaje, 'Error: ' + error, 'error');
+        })
+        .aplicarProteccionTotal();
+    }
+    
+    // ============================================
+    // UTILIDADES
+    // ============================================
+    function mostrarMensaje(elemento, texto, tipo) {
+      elemento.textContent = texto;
+      elemento.className = 'mensaje ' + tipo;
+      elemento.style.display = 'block';
+      
+      // Ocultar después de 5 segundos si es éxito
+      if (tipo === 'success') {
+        setTimeout(function() {
+          elemento.style.display = 'none';
+        }, 5000);
+      }
+    }
+  </script>
+  
+</body>
+</html>
