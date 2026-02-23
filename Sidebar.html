@@ -68,7 +68,10 @@
       </div>
       
       <div class="form-group">
-        <label>Seleccionar guardias (click para seleccionar/deseleccionar):</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label style="margin-bottom: 0;">Seleccionar guardias:</label>
+          <button onclick="seleccionarTodos()" class="btn-toggle-all" id="btnTodos">Todos</button>
+        </div>
         <div id="guardiasBotones" class="guardias-botones">
           <div class="loading">Cargando...</div>
         </div>
@@ -183,7 +186,7 @@
       // Mostrar botón procesar
       document.getElementById('btnProcesarAgregar').style.display = 'block';
       
-      mensaje.textContent = '';
+      ocultarMensaje(mensaje);
     }
     
     function actualizarListaAgregar() {
@@ -307,7 +310,7 @@
       const btn = document.getElementById('btnProcesarAgregar');
       btn.disabled = true;
       btn.textContent = 'Procesando ' + listaGuardiasAgregar.length + ' guardia(s)...';
-      mensaje.textContent = '';
+      ocultarMensaje(mensaje);
       
       google.script.run
         .withSuccessHandler(function(resultado) {
@@ -328,6 +331,29 @@
         .agregarGuardiasBatch(JSON.stringify(listaGuardiasAgregar));
     }
     
+    // ============================================
+    // SELECCIONAR / DESELECCIONAR TODOS
+    // ============================================
+    function seleccionarTodos() {
+      var botones = document.querySelectorAll('#guardiasBotones .guardia-btn');
+      var btn = document.getElementById('btnTodos');
+      var todosSeleccionados = Array.from(botones).every(function(b) {
+        return b.style.display === 'none' || b.classList.contains('selected');
+      });
+
+      botones.forEach(function(b) {
+        if (b.style.display !== 'none') {
+          if (todosSeleccionados) {
+            b.classList.remove('selected');
+          } else {
+            b.classList.add('selected');
+          }
+        }
+      });
+
+      btn.textContent = todosSeleccionados ? 'Todos' : 'Ninguno';
+    }
+
     // ============================================
     // IMPORTAR EXCEL PARA ELIMINAR
     // ============================================
@@ -450,7 +476,7 @@
       const btn = event.target;
       btn.disabled = true;
       btn.textContent = 'Eliminando ' + legajos.length + ' guardia(s)...';
-      mensaje.textContent = '';
+      ocultarMensaje(mensaje);
       
       google.script.run
         .withSuccessHandler(function(resultado) {
@@ -481,7 +507,7 @@
       const btn = event.target;
       btn.disabled = true;
       btn.textContent = 'Confirmando...';
-      mensaje.textContent = '';
+      ocultarMensaje(mensaje);
       
       google.script.run
         .withSuccessHandler(function(resultado) {
@@ -515,7 +541,7 @@
       
       btn.disabled = true;
       btn.textContent = 'Reparando...';
-      mensaje.textContent = '';
+      ocultarMensaje(mensaje);
       
       google.script.run
         .withSuccessHandler(function(resultado) {
@@ -538,11 +564,29 @@
     // ============================================
     // UTILIDADES
     // ============================================
+    var timersMensajes = {};
+
     function mostrarMensaje(elemento, texto, tipo) {
       elemento.innerHTML = texto.replace(/\n/g, '<br>');
       elemento.className = 'mensaje ' + tipo;
       elemento.style.display = 'block';
       elemento.style.whiteSpace = 'pre-line';
+
+      var id = elemento.id;
+      if (timersMensajes[id]) clearTimeout(timersMensajes[id]);
+      timersMensajes[id] = setTimeout(function() {
+        ocultarMensaje(elemento);
+      }, 300000);
+    }
+
+    function ocultarMensaje(elemento) {
+      elemento.textContent = '';
+      elemento.style.display = 'none';
+      var id = elemento.id;
+      if (timersMensajes[id]) {
+        clearTimeout(timersMensajes[id]);
+        delete timersMensajes[id];
+      }
     }
   </script>
   

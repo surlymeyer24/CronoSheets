@@ -75,6 +75,9 @@ function agregarGuardiasBatch(listaJSON) {
   }
   if (!msg) msg = 'No se procesó ningún guardia.';
 
+  Logger.log('=== RESULTADO agregarGuardiasBatch ===');
+  Logger.log(msg);
+
   return { success: fase1.agregados.length > 0, message: msg };
 }
 
@@ -136,15 +139,48 @@ function crearHojasNuevas(ss, hojaResumen, nombres) {
   var creadas = [];
   var fallidas = [];
 
-  // 2a. Crear hojas desde modelo
-  nombres.forEach(function(nombre) {
+  // 2a. Crear hojas desde modelo (con flush cada 50 y reintento)
+  var hojaModelo = ss.getSheetByName('modelo');
+  if (!hojaModelo) {
+    return { creadas: [], fallidas: nombres.map(function(n) { return { nombre: n, motivo: 'No existe la hoja "modelo"' }; }) };
+  }
+
+  var pendientesReintento = [];
+
+  nombres.forEach(function(nombre, i) {
     try {
-      crearHojaDesdeModelo(nombre);
+      crearHojaDesdeModelo(ss, hojaModelo, nombre);
       creadas.push(nombre);
     } catch (e) {
-      fallidas.push({ nombre: nombre, motivo: e.message });
+      Logger.log('Error creando "' + nombre + '": ' + e.message);
+      pendientesReintento.push(nombre);
+    }
+
+    if ((i + 1) % 50 === 0) {
+      SpreadsheetApp.flush();
+      Utilities.sleep(1000);
     }
   });
+
+  if (pendientesReintento.length > 0) {
+    Logger.log('Reintentando ' + pendientesReintento.length + ' hojas...');
+    SpreadsheetApp.flush();
+    Utilities.sleep(2000);
+
+    pendientesReintento.forEach(function(nombre, i) {
+      try {
+        crearHojaDesdeModelo(ss, hojaModelo, nombre);
+        creadas.push(nombre);
+      } catch (e) {
+        fallidas.push({ nombre: nombre, motivo: e.message });
+      }
+
+      if ((i + 1) % 50 === 0) {
+        SpreadsheetApp.flush();
+        Utilities.sleep(1000);
+      }
+    });
+  }
 
   // 2b. Mover a posición alfabética
   if (creadas.length > 0) {
@@ -155,14 +191,10 @@ function crearHojasNuevas(ss, hojaResumen, nombres) {
     }
   }
 
-  // 2c. Proteger cada hoja nueva (esNueva=true, no busca protecciones existentes)
-  creadas.forEach(function(nombre) {
-    try {
-      aplicarProteccionAHoja(nombre, true);
-    } catch (e) {
-      Logger.log('Error protegiendo "' + nombre + '": ' + e.message);
-    }
-  });
+  // 2c. Proteger hojas nuevas (una sola pasada con referencias cacheadas)
+  if (creadas.length > 0) {
+    protegerHojasBatch(ss, creadas);
+  }
 
   // 2d. Actualizar hipervínculos en RESUMEN
   actualizarHipervinculosResumen(hojaResumen);
@@ -195,11 +227,7 @@ function moverHojasNuevas(nombresNuevos) {
   });
 }
 
-function crearHojaDesdeModelo(nombreGuardia) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const hojaModelo = ss.getSheetByName('modelo');
-
-  if (!hojaModelo) throw new Error('No existe la hoja "modelo"');
+function crearHojaDesdeModelo(ss, hojaModelo, nombreGuardia) {
   if (ss.getSheetByName(nombreGuardia)) return;
 
   var nuevaHoja = hojaModelo.copyTo(ss);
@@ -314,24 +342,46 @@ function aplicarEstilosResumen(hojaResumen) {
   if (ultimaFila < 5) return;
 
   var filas = ultimaFila - 4;
-  var rango = hojaResumen.getRange(5, 1, filas, 11);
+  var columnas = 10; // B hasta K = 10 columnas
+  var rango = hojaResumen.getRange(5, 2, filas, columnas);
 
   rango
-    .setFontFamily('Arial')
-    .setFontSize(10)
     .setVerticalAlignment('middle')
-    .setBorder(true, true, true, true, true, true, '#dadce0', SpreadsheetApp.BorderStyle.SOLID);
+    .setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
 
-  hojaResumen.getRange(5, 1, filas, 2).setHorizontalAlignment('center');
-  hojaResumen.getRange(5, 3, filas, 1).setHorizontalAlignment('left');
-  hojaResumen.getRange(5, 4, filas, 8).setHorizontalAlignment('center');
+  // Col B: Corbel 16, blanco sobre rojo, centrado
+  var rangoB = hojaResumen.getRange(5, 2, filas, 1);
+  rangoB.setFontFamily('Corbel').setFontSize(16).setFontColor('#ffffff')
+    .setBackground('#D21312').setHorizontalAlignment('center');
 
-  var colores = [];
+  // Col C a D: Arial 13 negrita, alineado a la izquierda
+  var rangoCD = hojaResumen.getRange(5, 3, filas, 2);
+  rangoCD.setFontFamily('Arial').setFontSize(13).setFontWeight('bold')
+    .setHorizontalAlignment('left');
+
+  // Col E: Arial 13 negrita, centrado
+  var rangoE = hojaResumen.getRange(5, 5, filas, 1);
+  rangoE.setFontFamily('Arial').setFontSize(13).setFontWeight('bold')
+    .setHorizontalAlignment('center');
+
+  // Col F a K: Calibri 12, centrado, formato hh:mm
+  var rangoFK = hojaResumen.getRange(5, 6, filas, 6);
+  rangoFK.setFontFamily('Calibri').setFontSize(12)
+    .setHorizontalAlignment('center')
+    .setNumberFormat('[h]:mm');
+
+  // Zebra solo en C-K (B tiene fondo rojo fijo)
+  var coloresZebra = [];
   for (var i = 0; i < filas; i++) {
     var color = (i % 2 === 0) ? '#ffffff' : '#f3f3f3';
-    colores.push(Array(11).fill(color));
+    coloresZebra.push(Array(9).fill(color));
   }
-  rango.setBackgrounds(colores);
+  hojaResumen.getRange(5, 3, filas, 9).setBackgrounds(coloresZebra);
+
+  // Auto-ajustar ancho de columnas B(2) a K(11)
+  for (var col = 2; col <= 11; col++) {
+    hojaResumen.autoResizeColumn(col);
+  }
 }
 
 function desprotegerHoja(hoja) {
@@ -384,6 +434,34 @@ function esHojaResumen(nombre) {
 
 function obtenerHojaResumen(ss) {
   return ss.getSheets().find(h => h.getName().toLowerCase() === 'resumen') || null;
+}
+
+function protegerHojasBatch(ss, nombres) {
+  var email = Session.getEffectiveUser().getEmail();
+  var adminEmail = 'implementaciones.it@bacarsa.com.ar';
+
+  nombres.forEach(function(nombre, i) {
+    try {
+      var hoja = ss.getSheetByName(nombre);
+      if (!hoja) return;
+
+      var p = hoja.protect().setDescription('Bloqueo hoja');
+      p.addEditor(email);
+      p.addEditor(adminEmail);
+      if (p.canDomainEdit()) p.setDomainEdit(false);
+
+      p.setUnprotectedRanges([
+        hoja.getRange('C9:D40'),
+        hoja.getRange('K9:L40'),
+        hoja.getRange('M9:N40'),
+        hoja.getRange(1, 15, hoja.getMaxRows(), hoja.getMaxColumns() - 14)
+      ]);
+    } catch (e) {
+      Logger.log('Error protegiendo "' + nombre + '": ' + e.message);
+    }
+
+    if ((i + 1) % 50 === 0) SpreadsheetApp.flush();
+  });
 }
 
 function aplicarProteccionAHoja(nombreHoja, esNueva) {
@@ -461,16 +539,16 @@ function aplicarProteccionTotal() {
 
     SpreadsheetApp.flush();
 
-    return {
-      success: true,
-      message: '✅ Proceso completado\n\n' +
+    var msgOk = '✅ Proceso completado\n\n' +
                '✓ ' + protegidas + ' hoja(s) nuevas protegidas\n' +
                '✓ ' + omitidas + ' hoja(s) ya tenían protección (no se tocaron)\n' +
-               '✓ Listo para usar'
-    };
+               '✓ Listo para usar';
+    Logger.log('=== RESULTADO aplicarProteccionTotal ===');
+    Logger.log(msgOk);
+    return { success: true, message: msgOk };
 
   } catch (error) {
-    Logger.log('ERROR: ' + error.message);
+    Logger.log('ERROR aplicarProteccionTotal: ' + error.message);
     return {
       success: false,
       message: 'Error al aplicar protección: ' + error.message
@@ -515,11 +593,11 @@ function repararProteccionResumen() {
 
     SpreadsheetApp.flush();
 
-    return {
-      success: true,
-      message: '✅ Protección de Resumen reparada correctamente.\n' +
-               'Se quitaron ' + removidas + ' protección(es) vieja(s) y se creó una nueva.'
-    };
+    var msgOk = '✅ Protección de Resumen reparada correctamente.\n' +
+               'Se quitaron ' + removidas + ' protección(es) vieja(s) y se creó una nueva.';
+    Logger.log('=== RESULTADO repararProteccionResumen ===');
+    Logger.log(msgOk);
+    return { success: true, message: msgOk };
 
   } catch (error) {
     Logger.log('ERROR repararProteccionResumen: ' + error.message);
@@ -621,6 +699,9 @@ function eliminarGuardiasBatch(legajosJSON) {
     msg += fase2.fallidas.map(function(f) { return '  ✗ ' + f.nombre + ': ' + f.motivo; }).join('\n');
   }
   if (!msg) msg = 'No se procesó ningún guardia.';
+
+  Logger.log('=== RESULTADO eliminarGuardiasBatch ===');
+  Logger.log(msg);
 
   return { success: fase1.eliminados.length > 0, message: msg };
 }
