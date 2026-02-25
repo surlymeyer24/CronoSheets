@@ -109,6 +109,15 @@
         </button>
         <div id="mensajeReparar" class="mensaje"></div>
       </div>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ccc;">
+        <p class="info-text" style="font-size: 11px; color: #888;">
+          Borra hojas cuyo nombre no está en Resumen (limpieza de huérfanas):
+        </p>
+        <button onclick="borrarHojasNoEnResumen()" class="btn btn-secondary" style="font-size: 12px;" id="btnBorrarHuerfanas">
+          🧹 Borrar hojas no en Resumen
+        </button>
+        <div id="mensajeBorrarHuerfanas" class="mensaje"></div>
+      </div>
     </div>
     
   </div>
@@ -559,6 +568,27 @@
           mostrarMensaje(mensaje, 'Error: ' + error, 'error');
         })
         .repararProteccionResumen();
+    }
+
+    function borrarHojasNoEnResumen() {
+      const mensaje = document.getElementById('mensajeBorrarHuerfanas');
+      const btn = document.getElementById('btnBorrarHuerfanas');
+      if (!confirm('¿Borrar las hojas que no están en Resumen?\n\nSe eliminarán solo las hojas cuyo nombre no aparece en la columna de nombres de Resumen.')) return;
+      ocultarMensaje(mensaje);
+      btn.disabled = true;
+      btn.textContent = 'Verificando...';
+      google.script.run
+        .withSuccessHandler(function(resultado) {
+          btn.disabled = false;
+          btn.textContent = '🧹 Borrar hojas no en Resumen';
+          mostrarMensaje(mensaje, resultado.message, 'success');
+        })
+        .withFailureHandler(function(error) {
+          btn.disabled = false;
+          btn.textContent = '🧹 Borrar hojas no en Resumen';
+          mostrarMensaje(mensaje, 'Error: ' + error, 'error');
+        })
+        .borrarHojasNoEnResumen();
     }
     
     // ============================================

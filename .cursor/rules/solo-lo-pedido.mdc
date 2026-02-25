@@ -1,0 +1,10 @@
+---
+description: Hacer solo lo que se pide; extras como sugerencias o con aprobación
+alwaysApply: true
+---
+
+# Solo lo pedido
+
+- **Hacé únicamente** lo que te pido. No agregues cambios, refactors ni “mejoras” que no hayan sido solicitados.
+- Si querés hacer algo más (por ejemplo arreglar un bug que viste, mejorar un nombre, o tocar otro archivo), **pedime aprobación** o dejalo como **sugerencias** al final del mensaje.
+- No asumas que quiero optimizaciones, estilo o limpieza a menos que lo pida explícitamente.

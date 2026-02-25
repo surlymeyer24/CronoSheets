@@ -35,6 +35,9 @@ function doPost(e) {
       case 'confirmarProteccion':
         result = confirmarProteccionOwner(body.spreadsheetId, body.inicio, body.cantidad);
         break;
+      case 'ping':
+        result = pingOwner();
+        break;
       default:
         result = { status: 'error', message: 'accion_desconocida' };
     }
@@ -174,4 +177,8 @@ function testAcceso() {
 }
 function verToken() {
   Logger.log(PropertiesService.getScriptProperties().getProperty('OWNER_TOKEN'));
+}
+
+function pingOwner() {
+  return { status: 'ok', message: 'owner_bridge_ready', timestamp: new Date().toISOString() };
 }

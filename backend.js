@@ -35,6 +35,97 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+function obtenerConfigOwnerBridge_() {
+  const scriptProps = PropertiesService.getScriptProperties();
+  const url = (scriptProps.getProperty('OWNER_WEBAPP_URL') || '').trim();
+  const token = (scriptProps.getProperty('OWNER_TOKEN') || '').trim();
+  return { url: url, token: token, habilitado: !!(url && token) };
+}
+
+function llamarOwnerBridge_(accion, payload) {
+  const config = obtenerConfigOwnerBridge_();
+  if (!config.habilitado) {
+    return { status: 'disabled', message: 'owner_bridge_not_configured' };
+  }
+
+  const body = Object.assign({}, payload || {}, {
+    accion: accion,
+    token: config.token
+  });
+
+  try {
+    const resp = UrlFetchApp.fetch(config.url, {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      payload: JSON.stringify(body)
+    });
+
+    const statusCode = resp.getResponseCode();
+    const text = resp.getContentText() || '{}';
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch (jsonError) {
+      return { status: 'error', message: 'owner_bridge_invalid_json', statusCode: statusCode, raw: text };
+    }
+
+    if (statusCode < 200 || statusCode >= 300) {
+      return { status: 'error', message: 'owner_bridge_http_' + statusCode, data: data };
+    }
+
+    return data;
+  } catch (error) {
+    return { status: 'error', message: 'owner_bridge_fetch_failed', detail: String(error) };
+  }
+}
+
+function setOwnerBridgeConfig(url, token) {
+  if (!url || !token) {
+    throw new Error('setOwnerBridgeConfig requiere URL y token');
+  }
+  const scriptProps = PropertiesService.getScriptProperties();
+  scriptProps.setProperty('OWNER_WEBAPP_URL', String(url).trim());
+  scriptProps.setProperty('OWNER_TOKEN', String(token).trim());
+  return { success: true, message: 'Owner Bridge configurado' };
+}
+
+function verOwnerBridgeConfig() {
+  const c = obtenerConfigOwnerBridge_();
+  return {
+    habilitado: c.habilitado,
+    url: c.url || '(vacío)',
+    tokenConfigurado: !!c.token
+  };
+}
+
+
+function testOwnerBridgeConexion() {
+  const c = obtenerConfigOwnerBridge_();
+  if (!c.habilitado) {
+    return {
+      success: false,
+      message: 'Owner Bridge no configurado. Ejecutá setOwnerBridgeConfig(url, token).'
+    };
+  }
+
+  const resp = llamarOwnerBridge_('ping', {});
+  if (resp.status === 'ok') {
+    return {
+      success: true,
+      message: 'Conexión OK con Owner Bridge',
+      detail: resp
+    };
+  }
+
+  return {
+    success: false,
+    message: 'No se pudo conectar con Owner Bridge',
+    detail: resp
+  };
+}
+
 // ============================================
 // AGREGAR GUARDIAS (BATCH)
 // ============================================
@@ -385,6 +476,21 @@ function aplicarEstilosResumen(hojaResumen) {
 }
 
 function desprotegerHoja(hoja) {
+  const ss = hoja.getParent();
+  const viaOwner = llamarOwnerBridge_('desprotegerHoja', {
+    spreadsheetId: ss.getId(),
+    sheetName: hoja.getName()
+  });
+
+  if (viaOwner.status === 'ok') {
+    SpreadsheetApp.flush();
+    return;
+  }
+
+  if (viaOwner.status !== 'disabled') {
+    Logger.log('Owner Bridge desprotegerHoja falló para "' + hoja.getName() + '": ' + JSON.stringify(viaOwner));
+  }
+
   const protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
     .concat(hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE));
 
@@ -409,6 +515,20 @@ function desprotegerHoja(hoja) {
 }
 
 function reprotegerResumen(hojaResumen) {
+  const ss = hojaResumen.getParent();
+  const viaOwner = llamarOwnerBridge_('reprotegerResumen', {
+    spreadsheetId: ss.getId()
+  });
+
+  if (viaOwner.status === 'ok') {
+    SpreadsheetApp.flush();
+    return;
+  }
+
+  if (viaOwner.status !== 'disabled') {
+    Logger.log('Owner Bridge reprotegerResumen falló: ' + JSON.stringify(viaOwner));
+  }
+
   try {
     const emailUsuario = Session.getEffectiveUser().getEmail();
     const emailAdmin = 'implementaciones.it@bacarsa.com.ar';
@@ -561,6 +681,14 @@ function repararProteccionResumen() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const hojaResumen = obtenerHojaResumen(ss);
     if (!hojaResumen) return { success: false, message: 'No se encontró la hoja Resumen' };
+
+    const viaOwner = llamarOwnerBridge_('reprotegerResumen', { spreadsheetId: ss.getId() });
+    if (viaOwner.status === 'ok') {
+      return {
+        success: true,
+        message: '✅ Protección de Resumen reparada correctamente vía Owner Bridge.'
+      };
+    }
 
     const emailUsuario = Session.getEffectiveUser().getEmail();
     const emailAdmin = 'implementaciones.it@bacarsa.com.ar';
@@ -758,6 +886,22 @@ function eliminarHojasGuardias(ss, hojaResumen, nombres) {
   var eliminadas = [];
   var fallidas = [];
 
+  const viaOwner = llamarOwnerBridge_('eliminarHojas', {
+    spreadsheetId: ss.getId(),
+    nombres: nombres
+  });
+
+  if (viaOwner.status === 'ok') {
+    eliminadas = (viaOwner.eliminadas || []).slice();
+    fallidas = (viaOwner.fallidas || []).slice();
+    actualizarHipervinculosResumen(hojaResumen);
+    return { eliminadas: eliminadas, fallidas: fallidas };
+  }
+
+  if (viaOwner.status !== 'disabled') {
+    Logger.log('Owner Bridge eliminarHojas falló: ' + JSON.stringify(viaOwner));
+  }
+
   nombres.forEach(function(nombre) {
     try {
       var hoja = ss.getSheetByName(nombre);
@@ -773,4 +917,58 @@ function eliminarHojasGuardias(ss, hojaResumen, nombres) {
   actualizarHipervinculosResumen(hojaResumen);
 
   return { eliminadas: eliminadas, fallidas: fallidas };
+}
+
+/**
+ * Borra hojas que existen en el libro pero cuyo nombre no está en Resumen (columna C).
+ * Siempre ignora: modelo, resumen, indice (esHojaIgnorada). Útil para limpiar hojas huérfanas.
+ */
+function borrarHojasNoEnResumen() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hojaResumen = obtenerHojaResumen(ss);
+  if (!hojaResumen) return { success: false, message: 'No se encontró la hoja "Resumen".' };
+
+  var datos = hojaResumen.getDataRange().getValues();
+  var nombresEnResumen = new Set();
+  for (var i = 4; i < datos.length; i++) {
+    var n = datos[i][2];
+    if (n && typeof n === 'string' && n.trim() !== '') nombresEnResumen.add(n.trim());
+  }
+
+  var hojas = ss.getSheets();
+  var aBorrar = [];
+  hojas.forEach(function(hoja) {
+    var nombre = hoja.getName();
+    if (esHojaIgnorada(nombre)) return; // ignora modelo, resumen, indice
+    if (!nombresEnResumen.has(nombre)) aBorrar.push(hoja);
+  });
+
+  var eliminadas = [];
+  var fallidas = [];
+  aBorrar.forEach(function(hoja) {
+    var nombre = hoja.getName();
+    try {
+      desprotegerHoja(hoja);
+      ss.deleteSheet(hoja);
+      eliminadas.push(nombre);
+    } catch (e) {
+      fallidas.push({ nombre: nombre, motivo: e.message });
+    }
+  });
+
+  if (eliminadas.length > 0) actualizarHipervinculosResumen(hojaResumen);
+
+  var msg = '';
+  if (eliminadas.length > 0) {
+    msg += 'Hojas borradas (no estaban en Resumen) (' + eliminadas.length + '):\n';
+    msg += eliminadas.map(function(n) { return '  ✓ ' + n; }).join('\n');
+  }
+  if (fallidas.length > 0) {
+    if (msg) msg += '\n\n';
+    msg += 'No se pudieron borrar (' + fallidas.length + '):\n';
+    msg += fallidas.map(function(f) { return '  ✗ ' + f.nombre + ': ' + f.motivo; }).join('\n');
+  }
+  if (!msg) msg = 'No había hojas para borrar. Todas las hojas coinciden con Resumen.';
+
+  return { success: true, message: msg };
 }

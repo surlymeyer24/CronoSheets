@@ -1,0 +1,4 @@
+owner/**
+node_modules/**
+.git/**
+cambios.patch
