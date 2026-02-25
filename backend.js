@@ -82,51 +82,82 @@ function llamarOwnerBridge_(accion, payload) {
 }
 
 function setOwnerBridgeConfig(url, token) {
-  url = "https://script.google.com/macros/s/AKfycby1tJOK4MFdNIKoy4Qp3rIuF25qMynM4Tq-6mIEwOeAhCBxp_xiKZFtigyjaodDg-4Z/exec";
-  token = "43340ae9-501b-489f-bc0f-97a86406c673";
   if (!url || !token) {
     throw new Error('setOwnerBridgeConfig requiere URL y token');
   }
   const scriptProps = PropertiesService.getScriptProperties();
   scriptProps.setProperty('OWNER_WEBAPP_URL', String(url).trim());
   scriptProps.setProperty('OWNER_TOKEN', String(token).trim());
-  return { success: true, message: 'Owner Bridge configurado' };
+  const out = { success: true, message: 'Owner Bridge configurado' };
+  Logger.log('setOwnerBridgeConfig: ' + JSON.stringify(out));
+  return out;
 }
-
 
 function verOwnerBridgeConfig() {
   const c = obtenerConfigOwnerBridge_();
-  return {
+  const out = {
     habilitado: c.habilitado,
     url: c.url || '(vacío)',
-    tokenConfigurado: !!c.token
+    tokenConfigurado: !!c.token,
+    tokenPreview: c.token ? (c.token.substring(0, 8) + '...') : '(vacío)'
   };
+  Logger.log('verOwnerBridgeConfig: ' + JSON.stringify(out));
+  return out;
+}
+
+function diagnosticoOwnerBridge() {
+  const c = obtenerConfigOwnerBridge_();
+  const faltantes = [];
+  if (!c.url) faltantes.push('OWNER_WEBAPP_URL');
+  if (!c.token) faltantes.push('OWNER_TOKEN');
+
+  const out = {
+    success: faltantes.length === 0,
+    message: faltantes.length === 0
+      ? 'Owner Bridge configurado'
+      : 'Faltan propiedades: ' + faltantes.join(', '),
+    propiedadesFaltantes: faltantes,
+    config: {
+      habilitado: c.habilitado,
+      url: c.url || '(vacío)',
+      tokenConfigurado: !!c.token,
+      tokenPreview: c.token ? (c.token.substring(0, 8) + '...') : '(vacío)'
+    }
+  };
+
+  Logger.log('diagnosticoOwnerBridge: ' + JSON.stringify(out));
+  return out;
 }
 
 
 function testOwnerBridgeConexion() {
   const c = obtenerConfigOwnerBridge_();
   if (!c.habilitado) {
-    return {
+    const out = {
       success: false,
       message: 'Owner Bridge no configurado. Ejecutá setOwnerBridgeConfig(url, token).'
     };
+    Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(out, null, 2));
+    return out;
   }
 
   const resp = llamarOwnerBridge_('ping', {});
+  var out;
   if (resp.status === 'ok') {
-    return {
+    out = {
       success: true,
       message: 'Conexión OK con Owner Bridge',
       detail: resp
     };
+  } else {
+    out = {
+      success: false,
+      message: 'No se pudo conectar con Owner Bridge',
+      detail: resp
+    };
   }
-
-  return {
-    success: false,
-    message: 'No se pudo conectar con Owner Bridge',
-    detail: resp
-  };
+  Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(out, null, 2));
+  return out;
 }
 
 // ============================================
@@ -974,4 +1005,10 @@ function borrarHojasNoEnResumen() {
   if (!msg) msg = 'No había hojas para borrar. Todas las hojas coinciden con Resumen.';
 
   return { success: true, message: msg };
+}
+function configurarOwnerBridge() {
+  setOwnerBridgeConfig(
+    'https://script.google.com/macros/s/AKfycby1tJOK4MFdNIKoy4Qp3rIuF25qMynM4Tq-6mIEwOeAhCBxp_xiKZFtigyjaodDg-4Z/exec',
+    '43340ae9-501b-489f-bc0f-97a86406c673'
+  );
 }

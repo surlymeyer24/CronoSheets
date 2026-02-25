@@ -1,8 +1,8 @@
 diff --git a/backend.js b/backend.js
-index b124c2b72128986674063f74910b523cce3dfe0e..6811bbd45ca778b5dd5213fbc298a76174e1c840 100644
+index b124c2b72128986674063f74910b523cce3dfe0e..f989f661cef453c6c12fe91e45ace83088cbaf09 100644
 --- a/backend.js
 +++ b/backend.js
-@@ -13,50 +13,141 @@ function limpiarTriggers() {
+@@ -13,50 +13,170 @@ function limpiarTriggers() {
  }
  // ============================================
  // MENÚ PERSONALIZADO
@@ -81,16 +81,45 @@ index b124c2b72128986674063f74910b523cce3dfe0e..6811bbd45ca778b5dd5213fbc298a761
 +  const scriptProps = PropertiesService.getScriptProperties();
 +  scriptProps.setProperty('OWNER_WEBAPP_URL', String(url).trim());
 +  scriptProps.setProperty('OWNER_TOKEN', String(token).trim());
-+  return { success: true, message: 'Owner Bridge configurado' };
++  const out = { success: true, message: 'Owner Bridge configurado' };
++  Logger.log('setOwnerBridgeConfig: ' + JSON.stringify(out));
++  return out;
 +}
 +
 +function verOwnerBridgeConfig() {
 +  const c = obtenerConfigOwnerBridge_();
-+  return {
++  const out = {
 +    habilitado: c.habilitado,
 +    url: c.url || '(vacío)',
-+    tokenConfigurado: !!c.token
++    tokenConfigurado: !!c.token,
++    tokenPreview: c.token ? (c.token.substring(0, 8) + '...') : '(vacío)'
 +  };
++  Logger.log('verOwnerBridgeConfig: ' + JSON.stringify(out));
++  return out;
++}
++
++function diagnosticoOwnerBridge() {
++  const c = obtenerConfigOwnerBridge_();
++  const faltantes = [];
++  if (!c.url) faltantes.push('OWNER_WEBAPP_URL');
++  if (!c.token) faltantes.push('OWNER_TOKEN');
++
++  const out = {
++    success: faltantes.length === 0,
++    message: faltantes.length === 0
++      ? 'Owner Bridge configurado'
++      : 'Faltan propiedades: ' + faltantes.join(', '),
++    propiedadesFaltantes: faltantes,
++    config: {
++      habilitado: c.habilitado,
++      url: c.url || '(vacío)',
++      tokenConfigurado: !!c.token,
++      tokenPreview: c.token ? (c.token.substring(0, 8) + '...') : '(vacío)'
++    }
++  };
++
++  Logger.log('diagnosticoOwnerBridge: ' + JSON.stringify(out));
++  return out;
 +}
 +
 +
@@ -144,7 +173,7 @@ index b124c2b72128986674063f74910b523cce3dfe0e..6811bbd45ca778b5dd5213fbc298a761
    if (fase1.agregados.length > 0) {
      msg += '✅ Agregados en Resumen (' + fase1.agregados.length + '):\n';
      msg += fase1.agregados.map(function(n) { return '  ✓ ' + n; }).join('\n');
-@@ -363,74 +454,103 @@ function aplicarEstilosResumen(hojaResumen) {
+@@ -363,74 +483,103 @@ function aplicarEstilosResumen(hojaResumen) {
    var rangoE = hojaResumen.getRange(5, 5, filas, 1);
    rangoE.setFontFamily('Arial').setFontSize(13).setFontWeight('bold')
      .setHorizontalAlignment('center');
@@ -248,7 +277,7 @@ index b124c2b72128986674063f74910b523cce3dfe0e..6811bbd45ca778b5dd5213fbc298a761
  
  function obtenerHojaResumen(ss) {
    return ss.getSheets().find(h => h.getName().toLowerCase() === 'resumen') || null;
-@@ -540,50 +660,58 @@ function aplicarProteccionTotal() {
+@@ -540,50 +689,58 @@ function aplicarProteccionTotal() {
      SpreadsheetApp.flush();
  
      var msgOk = '✅ Proceso completado\n\n' +
@@ -307,7 +336,7 @@ index b124c2b72128986674063f74910b523cce3dfe0e..6811bbd45ca778b5dd5213fbc298a761
      p.addEditor(emailAdmin);
      if (p.canDomainEdit()) p.setDomainEdit(false);
      p.setUnprotectedRanges([
-@@ -736,41 +864,57 @@ function eliminarDeResumen(hojaResumen, legajos) {
+@@ -736,41 +893,57 @@ function eliminarDeResumen(hojaResumen, legajos) {
  
      var legajosEncontrados = new Set(aEliminar.map(function(g) { return g.legajo; }));
      legajos.forEach(function(l) {
