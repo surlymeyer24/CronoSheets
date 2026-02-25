@@ -82,6 +82,8 @@ function llamarOwnerBridge_(accion, payload) {
 }
 
 function setOwnerBridgeConfig(url, token) {
+  url = "https://script.google.com/macros/s/AKfycby1tJOK4MFdNIKoy4Qp3rIuF25qMynM4Tq-6mIEwOeAhCBxp_xiKZFtigyjaodDg-4Z/exec";
+  token = "43340ae9-501b-489f-bc0f-97a86406c673";
   if (!url || !token) {
     throw new Error('setOwnerBridgeConfig requiere URL y token');
   }
@@ -90,6 +92,7 @@ function setOwnerBridgeConfig(url, token) {
   scriptProps.setProperty('OWNER_TOKEN', String(token).trim());
   return { success: true, message: 'Owner Bridge configurado' };
 }
+
 
 function verOwnerBridgeConfig() {
   const c = obtenerConfigOwnerBridge_();
@@ -921,7 +924,7 @@ function eliminarHojasGuardias(ss, hojaResumen, nombres) {
 
 /**
  * Borra hojas que existen en el libro pero cuyo nombre no está en Resumen (columna C).
- * Siempre ignora: modelo, resumen, indice (esHojaIgnorada). Útil para limpiar hojas huérfanas.
+ * Útil para limpiar hojas huérfanas.
  */
 function borrarHojasNoEnResumen() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -939,7 +942,7 @@ function borrarHojasNoEnResumen() {
   var aBorrar = [];
   hojas.forEach(function(hoja) {
     var nombre = hoja.getName();
-    if (esHojaIgnorada(nombre)) return; // ignora modelo, resumen, indice
+    if (esHojaIgnorada(nombre)) return;
     if (!nombresEnResumen.has(nombre)) aBorrar.push(hoja);
   });
 
