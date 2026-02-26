@@ -1,20 +1,24 @@
 
 function doPost(e) {
   const scriptProps = PropertiesService.getScriptProperties();
-  const OWNER_TOKEN = scriptProps.getProperty('OWNER_TOKEN');
-  
+  const OWNER_TOKEN_RAW = scriptProps.getProperty('OWNER_TOKEN');
+  const expectedToken = (OWNER_TOKEN_RAW && String(OWNER_TOKEN_RAW).trim()) || '';
+
   try {
     const body = e.postData && e.postData.type === 'application/json'
       ? JSON.parse(e.postData.contents)
       : {};
 
-    if (!body.token || body.token !== OWNER_TOKEN) {
+    const receivedToken = (body.token != null && body.token !== '') ? String(body.token).trim() : '';
+    if (!expectedToken || receivedToken !== expectedToken) {
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_token' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    if (!body.spreadsheetId) {
+    // spreadsheetId solo es obligatorio para acciones que actúan sobre un libro
+    var necesitaSpreadsheetId = body.accion && body.accion !== 'ping';
+    if (necesitaSpreadsheetId && !body.spreadsheetId) {
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'error', message: 'spreadsheetId_requerido' }))
         .setMimeType(ContentService.MimeType.JSON);

@@ -133,33 +133,58 @@ function diagnosticoOwnerBridge() {
 function testOwnerBridgeConexion() {
   const c = obtenerConfigOwnerBridge_();
   if (!c.habilitado) {
-    const out = {
+    const outNoConfig = {
       success: false,
       message: 'Owner Bridge no configurado. Ejecutá setOwnerBridgeConfig(url, token).'
     };
-    Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(out, null, 2));
-    return out;
+    Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(outNoConfig));
+    return outNoConfig;
   }
 
   const resp = llamarOwnerBridge_('ping', {});
-  var out;
   if (resp.status === 'ok') {
-    out = {
+    const outOk = {
       success: true,
       message: 'Conexión OK con Owner Bridge',
       detail: resp
     };
-  } else {
-    out = {
-      success: false,
-      message: 'No se pudo conectar con Owner Bridge',
+    Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(outOk));
+    return outOk;
+  }
+
+  // Compatibilidad: owner viejo sin acción 'ping' devuelve accion_desconocida,
+  // pero esto confirma que URL/token/conectividad están bien.
+  if (resp && resp.message === 'accion_desconocida') {
+    const outLegacy = {
+      success: true,
+      message: 'Conexión OK con Owner Bridge (owner desactualizado: falta acción ping, re-deploy recomendado).',
       detail: resp
     };
+    Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(outLegacy));
+    return outLegacy;
   }
-  Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(out, null, 2));
-  return out;
+
+  const outError = {
+    success: false,
+    message: 'No se pudo conectar con Owner Bridge',
+    detail: resp
+  };
+  Logger.log('testOwnerBridgeConexion: ' + JSON.stringify(outError));
+  return outError;
 }
 
+function ejecutarDiagnosticoOwnerBridge() {
+  const config = verOwnerBridgeConfig();
+  const test = testOwnerBridgeConexion();
+
+  const resumen = {
+    config: config,
+    test: test
+  };
+
+  Logger.log('ejecutarDiagnosticoOwnerBridge: ' + JSON.stringify(resumen));
+  return resumen;
+}
 // ============================================
 // AGREGAR GUARDIAS (BATCH)
 // ============================================
@@ -255,6 +280,13 @@ function agregarEnResumen(hojaResumen, lista) {
   }
 
   try { reprotegerResumen(hojaResumen); } catch (e) {}
+
+  // recalcular totales maestros tras modificar el contenido de Resumen
+  try {
+    actualizarSumasMaestras();
+  } catch (err) {
+    Logger.log('No se pudo actualizar totales maestros tras agregar en resumen: ' + err.message);
+  }
 
   return { agregados: agregados, fallidos: fallidos };
 }
@@ -511,65 +543,118 @@ function aplicarEstilosResumen(hojaResumen) {
 
 function desprotegerHoja(hoja) {
   const ss = hoja.getParent();
-  const viaOwner = llamarOwnerBridge_('desprotegerHoja', {
-    spreadsheetId: ss.getId(),
-    sheetName: hoja.getName()
-  });
+  const nombreHoja = hoja.getName();
+  const usuarioActual = Session.getEffectiveUser().getEmail();
+  Logger.log('desprotegerHoja: Intentando desproteger "' + nombreHoja + '" como ' + usuarioActual);
+  
+  // FASE 1: Intentar vía Owner Bridge (más confiable para usuarios sin permisos)
+  const config = obtenerConfigOwnerBridge_();
+  if (config.habilitado) {
+    Logger.log('  → Intentando vía Owner Bridge...');
+    const viaOwner = llamarOwnerBridge_('desprotegerHoja', {
+      spreadsheetId: ss.getId(),
+      sheetName: nombreHoja
+    });
 
-  if (viaOwner.status === 'ok') {
-    SpreadsheetApp.flush();
-    return;
+    if (viaOwner.status === 'ok') {
+      Logger.log('  ✓ Owner Bridge desprotegió exitosamente');
+      SpreadsheetApp.flush();
+      return;
+    } else if (viaOwner.status !== 'disabled') {
+      Logger.log('  ✗ Owner Bridge falló: ' + JSON.stringify(viaOwner));
+    }
   }
 
-  if (viaOwner.status !== 'disabled') {
-    Logger.log('Owner Bridge desprotegerHoja falló para "' + hoja.getName() + '": ' + JSON.stringify(viaOwner));
-  }
-
+  // FASE 2: Intentar localmente
+  Logger.log('  → Intentando desprotección local...');
   const protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
     .concat(hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE));
 
-  if (protecciones.length === 0) return;
+  if (protecciones.length === 0) {
+    Logger.log('  ✓ No hay protecciones para remover');
+    return;
+  }
 
   let removidas = 0;
-  protecciones.forEach(p => {
+  let errores = 0;
+  protecciones.forEach((p, i) => {
     try {
+      const editor = p.getEditors();
+      const desc = p.getDescription();
+      Logger.log('    Protección ' + (i+1) + ': descripción="' + desc + '", ' + editor.length + ' editores');
+      
+      // Si el usuario NO es editor, esta línea fallará
       p.remove();
       removidas++;
+      Logger.log('      ✓ Removida');
     } catch (e) {
-      Logger.log('No se pudo quitar protección de "' + hoja.getName() + '": ' + e.message);
+      errores++;
+      Logger.log('      ✗ Error: ' + e.message);
     }
   });
 
   if (removidas > 0) SpreadsheetApp.flush();
 
-  if (removidas < protecciones.length) {
-    Logger.log('AVISO: quedaron ' + (protecciones.length - removidas) +
-      ' protecciones sin quitar en "' + hoja.getName() + '"');
+  Logger.log('  → Resultado: ' + removidas + ' removidas, ' + errores + ' errores');
+  
+  if (errores > 0 && removidas === 0) {
+    // No se pudo remover NADA: probablemente permisos insuficientes
+    Logger.log('  ⚠ ERROR CRÍTICO: No se tienen permisos para desproteger. El usuario actual (' + usuarioActual + ') no es editor de la protección.');
   }
 }
 
 function reprotegerResumen(hojaResumen) {
   const ss = hojaResumen.getParent();
-  const viaOwner = llamarOwnerBridge_('reprotegerResumen', {
-    spreadsheetId: ss.getId()
-  });
+  const emailUsuario = Session.getEffectiveUser().getEmail();
+  const emailAdmin = 'implementaciones.it@bacarsa.com.ar';
+  const emailDes = 'desarrollo.it@bacarsa.com.ar';
+  
+  Logger.log('reprotegerResumen: Iniciando para usuario ' + emailUsuario);
 
-  if (viaOwner.status === 'ok') {
-    SpreadsheetApp.flush();
-    return;
+  // FASE 1: Intentar vía Owner Bridge (más confiable)
+  const config = obtenerConfigOwnerBridge_();
+  if (config.habilitado) {
+    Logger.log('  → Intentando vía Owner Bridge...');
+    const viaOwner = llamarOwnerBridge_('reprotegerResumen', {
+      spreadsheetId: ss.getId()
+    });
+
+    if (viaOwner.status === 'ok') {
+      Logger.log('  ✓ Owner Bridge reprotegió exitosamente');
+      SpreadsheetApp.flush();
+      return;
+    } else if (viaOwner.status !== 'disabled') {
+      Logger.log('  ✗ Owner Bridge falló: ' + JSON.stringify(viaOwner));
+    }
   }
 
-  if (viaOwner.status !== 'disabled') {
-    Logger.log('Owner Bridge reprotegerResumen falló: ' + JSON.stringify(viaOwner));
-  }
-
+  // FASE 2: Proteger localmente
+  Logger.log('  → Protegiendo localmente...');
   try {
-    const emailUsuario = Session.getEffectiveUser().getEmail();
-    const emailAdmin = 'implementaciones.it@bacarsa.com.ar';
+    // Primero quitar todas las protecciones viejas
+    const protecciones = hojaResumen.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+      .concat(hojaResumen.getProtections(SpreadsheetApp.ProtectionType.RANGE));
+    
+    let removidas = 0;
+    protecciones.forEach(p => {
+      try { 
+        p.remove();
+        removidas++;
+      } catch (e) {
+        Logger.log('    No se pudo quitar protección vieja: ' + e.message);
+      }
+    });
+    
+    if (removidas > 0) {
+      Logger.log('    ✓ ' + removidas + ' protecciones viejas removidas');
+      SpreadsheetApp.flush();
+    }
 
+    // Ahora crear protección nueva
     const p = hojaResumen.protect().setDescription('Bloqueo automático');
     p.addEditor(emailUsuario);
     p.addEditor(emailAdmin);
+    p.addEditor(emailDes);
     if (p.canDomainEdit()) p.setDomainEdit(false);
 
     p.setUnprotectedRanges([
@@ -578,8 +663,10 @@ function reprotegerResumen(hojaResumen) {
     ]);
 
     SpreadsheetApp.flush();
+    Logger.log('  ✓ Protección nueva creada exitosamente');
   } catch (error) {
-    Logger.log('Error en reprotegerResumen: ' + error.message);
+    Logger.log('  ✗ Error en reprotegerResumen: ' + error.message);
+    throw error;
   }
 }
 function esHojaResumen(nombre) {
@@ -593,15 +680,23 @@ function obtenerHojaResumen(ss) {
 function protegerHojasBatch(ss, nombres) {
   var email = Session.getEffectiveUser().getEmail();
   var adminEmail = 'implementaciones.it@bacarsa.com.ar';
+  var emailDes = 'desarrollo.it@bacarsa.com.ar';
+
+  Logger.log('protegerHojasBatch: Protegiendo ' + nombres.length + ' hoja(s) como ' + email);
 
   nombres.forEach(function(nombre, i) {
     try {
       var hoja = ss.getSheetByName(nombre);
-      if (!hoja) return;
+      if (!hoja) {
+        Logger.log('  Hoja "' + nombre + '" no encontrada');
+        return;
+      }
 
+      Logger.log('  Protegiendo "' + nombre + '"...');
       var p = hoja.protect().setDescription('Bloqueo hoja');
       p.addEditor(email);
       p.addEditor(adminEmail);
+      p.addEditor(emailDes);
       if (p.canDomainEdit()) p.setDomainEdit(false);
 
       p.setUnprotectedRanges([
@@ -610,12 +705,15 @@ function protegerHojasBatch(ss, nombres) {
         hoja.getRange('M9:N40'),
         hoja.getRange(1, 15, hoja.getMaxRows(), hoja.getMaxColumns() - 14)
       ]);
+      Logger.log('    ✓ Protegida');
     } catch (e) {
-      Logger.log('Error protegiendo "' + nombre + '": ' + e.message);
+      Logger.log('  ✗ Error protegiendo "' + nombre + '": ' + e.message);
     }
 
     if ((i + 1) % 50 === 0) SpreadsheetApp.flush();
   });
+  
+  Logger.log('protegerHojasBatch: Completado');
 }
 
 function aplicarProteccionAHoja(nombreHoja, esNueva) {
@@ -625,6 +723,7 @@ function aplicarProteccionAHoja(nombreHoja, esNueva) {
 
   var email = Session.getEffectiveUser().getEmail();
   var adminEmail = 'implementaciones.it@bacarsa.com.ar';
+  var emailDes = 'desarrollo.it@bacarsa.com.ar';
 
   if (!esNueva) {
     hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
@@ -635,6 +734,7 @@ function aplicarProteccionAHoja(nombreHoja, esNueva) {
   var p = hoja.protect().setDescription('Bloqueo hoja');
   p.addEditor(email);
   p.addEditor(adminEmail);
+  p.addEditor(emailDes);
   if (p.canDomainEdit()) p.setDomainEdit(false);
 
   p.setUnprotectedRanges([
@@ -650,7 +750,10 @@ function aplicarProteccionTotal() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const emailUsuario = Session.getEffectiveUser().getEmail();
     const emailAdmin = 'implementaciones.it@bacarsa.com.ar';
+    const emailDes = 'desarrollo.it@bacarsa.com.ar';
     const hojas = ss.getSheets();
+
+    Logger.log('aplicarProteccionTotal iniciado por ' + emailUsuario);
 
     let protegidas = 0;
     let omitidas = 0;
@@ -659,7 +762,18 @@ function aplicarProteccionTotal() {
       const protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET);
 
       if (protecciones.length > 0) {
+        // ya existe protección; por seguridad añado al usuario actual y admins como editores
+        protecciones.forEach(function(p) {
+          try {
+            p.addEditor(emailUsuario);
+            p.addEditor(emailAdmin);
+            p.addEditor(emailDes);
+          } catch (e) {
+            Logger.log('  no se pudo agregar editor a ' + hoja.getName() + ': ' + e.message);
+          }
+        });
         omitidas++;
+        Logger.log('  ' + hoja.getName() + ': ya protegida (se actualizaron editores)');
         return;
       }
 
@@ -669,6 +783,7 @@ function aplicarProteccionTotal() {
 
       p.addEditor(emailUsuario);
       p.addEditor(emailAdmin);
+      p.addEditor(emailDes);
 
       if (p.canDomainEdit()) {
         p.setDomainEdit(false);
@@ -689,14 +804,30 @@ function aplicarProteccionTotal() {
       }
 
       protegidas++;
+      Logger.log('  ' + nombre + ': protegida ✓');
     });
 
     SpreadsheetApp.flush();
 
+    // después de aplicar protección total, recalcular los totales maestros en Resumen
+    let totalesOk = false;
+    try {
+      actualizarSumasMaestras();
+      Logger.log('  totales maestros actualizados');
+      totalesOk = true;
+    } catch (err) {
+      Logger.log('  no se pudo actualizar totales maestros: ' + err.message);
+    }
+
     var msgOk = '✅ Proceso completado\n\n' +
                '✓ ' + protegidas + ' hoja(s) nuevas protegidas\n' +
-               '✓ ' + omitidas + ' hoja(s) ya tenían protección (no se tocaron)\n' +
-               '✓ Listo para usar';
+               '✓ ' + omitidas + ' hoja(s) ya tenían protección (no se tocaron)\n';
+    if (totalesOk) {
+      msgOk += '✓ Totales maestros recalculados\n';
+    } else {
+      msgOk += '⚠ No se pudieron recalcular totales maestros (ver logs)\n';
+    }
+    msgOk += '✓ Listo para usar';
     Logger.log('=== RESULTADO aplicarProteccionTotal ===');
     Logger.log(msgOk);
     return { success: true, message: msgOk };
@@ -912,6 +1043,13 @@ function eliminarDeResumen(hojaResumen, legajos) {
 
   try { reprotegerResumen(hojaResumen); } catch (e) {}
 
+  // actualizar totales maestros luego de la eliminación
+  try {
+    actualizarSumasMaestras();
+  } catch (err) {
+    Logger.log('No se pudo actualizar totales maestros tras eliminar en resumen: ' + err.message);
+  }
+
   return { eliminados: eliminados, fallidos: fallidos };
 }
 
@@ -1008,7 +1146,7 @@ function borrarHojasNoEnResumen() {
 }
 function configurarOwnerBridge() {
   setOwnerBridgeConfig(
-    'https://script.google.com/macros/s/AKfycby1tJOK4MFdNIKoy4Qp3rIuF25qMynM4Tq-6mIEwOeAhCBxp_xiKZFtigyjaodDg-4Z/exec',
-    '43340ae9-501b-489f-bc0f-97a86406c673'
+    'https://script.google.com/macros/s/AKfycbw8wrBStBIo0m77ei5v6MZ1p62FAOog0ck_OSa075WqO8CHwAEawAb8YaQgEjbDe3c/exec',
+    '0209a839-f3e3-4fe9-b8d5-26ec29952651'
   );
 }

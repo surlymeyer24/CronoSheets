@@ -15,6 +15,7 @@ function onEditActive2(e) {
   const col = e.range.getColumn();
 
   if (name.toLowerCase() === "resumen") {
+    // cualquier cambio en el contenido de la tabla de nombres (col D-J) o eliminación/creación
     if (row >= 5 && col >= 4 && col <= 9) {
 
       const filas = e.range.getNumRows();
@@ -29,6 +30,8 @@ function onEditActive2(e) {
         restaurarResumenFila(row);
       }
     }
+    // también asegurarse de ajustar las sumas maestras ante cualquier edición
+    actualizarSumasMaestras();
     return;
   }
   if (row >= 9 && row <= 40) {
@@ -41,29 +44,31 @@ function onEditActive2(e) {
 function onChange(e) {
   if (!e) return;
 
-  if (e.changeType !== "INSERT_GRID" && e.changeType !== "COPY_GRID") {
-    return;
-  }
-
   const ss = SpreadsheetApp.getActive();
   const props = PropertiesService.getDocumentProperties();
 
+  // actualizar lista de hojas conocidas y protección de nuevas
   const antes = JSON.parse(props.getProperty("HOJAS_CONOCIDAS") || "[]");
   const ahora = ss.getSheets().map(s => s.getName());
 
   const nuevas = ahora.filter(n => !antes.includes(n));
-
   nuevas.forEach(nombre => {
     const hoja = ss.getSheetByName(nombre);
     if (hoja) protegerHoja(hoja);
   });
 
   props.setProperty("HOJAS_CONOCIDAS", JSON.stringify(ahora));
+
+  // siempre que cambie la estructura de hojas, recalcular los totales maestros
+  if (e.changeType === "INSERT_GRID" || e.changeType === "REMOVE_GRID" || e.changeType === "COPY_GRID") {
+    actualizarSumasMaestras();
+  }
 }
 
 function protegerHoja(hoja) {
   const email = Session.getEffectiveUser().getEmail();
   const adminEmail = "implementaciones.it@bacarsa.com.ar";
+  const emailDes = "desarrollo.it@bacarsa.com.ar";
 
   hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET)
     .concat(hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE))
@@ -72,11 +77,13 @@ function protegerHoja(hoja) {
   const p = hoja.protect().setDescription("Bloqueo hoja");
   p.addEditor(email);
   p.addEditor(adminEmail);
+  p.addEditor(emailDes);
   if (p.canDomainEdit()) p.setDomainEdit(false);
 
   if (hoja.getName().toLowerCase() === "resumen") {
     p.setUnprotectedRanges([
       hoja.getRange("B:D"),
+      hoja.getRange("E:E"),
       hoja.getRange("L:L")
     ]);
   } else {
@@ -201,6 +208,11 @@ function restaurarResumenFila(fila) {
 
   const fila41 = sh.getRange("F41:J41").getValues();
   resu.getRange(fila, 6, 1, 5).setValues(fila41);
+  // agregar fórmula de suma I+J en la columna E
+  resu.getRange(fila, 5).setFormula("=I" + fila + "+J" + fila);
+
+  // actualiza las sumas maestras de la fila 2 tras cambiar una fila individual
+  actualizarSumasMaestras();
 }
 
 function restaurarResumenCompleto() {
@@ -215,7 +227,36 @@ function restaurarResumenCompleto() {
     if (!sh) return;
 
     const fila41 = sh.getRange("F41:J41").getValues();
-    resu.getRange(i + 5, 6, 1, 5).setValues(fila41); // Cambio: i + 5
+    const numFila = i + 5;
+    resu.getRange(numFila, 6, 1, 5).setValues(fila41); // Cambio: i + 5
+    // agregar fórmula de suma I+J en la columna E
+    resu.getRange(numFila, 5).setFormula("=I" + numFila + "+J" + numFila);
+  });
+
+  // actualizar también los totales maestros en fila 2
+  actualizarSumasMaestras();
+}
+
+function actualizarSumasMaestras() {
+  const ss = SpreadsheetApp.getActive();
+  const resu = obtenerHojaResumen(ss);
+  if (!resu) return;
+
+  // encontrar última fila con nombre en columna C (desde fila 5 en adelante)
+  const nombres = resu.getRange("C5:C").getValues();
+  let last = 4; // base
+  for (let i = 0; i < nombres.length; i++) {
+    if (nombres[i][0]) {
+      last = i + 5; // fila real
+    }
+  }
+  if (last < 5) last = 5;
+
+  // columnas E a J (maestros)
+  const cols = ["E", "F", "G", "H", "I", "J"];
+  cols.forEach(col => {
+    const range = col + "5:" + col + last;
+    resu.getRange(col + "2").setFormula("=SUM(" + range + ")");
   });
 }
 
@@ -237,6 +278,7 @@ function forzarReproteccionTotal() {
     if (hoja.getName().toLowerCase() === "resumen") {
       p.setUnprotectedRanges([
         hoja.getRange("B:D"),
+        hoja.getRange("E:E"),
         hoja.getRange("L:L")
       ]);
     } else {
