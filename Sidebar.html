@@ -10,6 +10,20 @@
   
   <div class="container">
     
+    <!-- DESCARGAR CARPETA ZIP -->
+    <div class="section">
+      <h2>📦 Descargar carpeta (ZIP)</h2>
+      <p class="info-text" style="margin-bottom: 8px; color:#000">
+        Comprimir carpeta de Drive y descargar:
+      </p>
+      <button onclick="descargarCarpetaZip()" class="btn btn-primary" style="font-size: 16px;" id="btnDescargarCarpeta">
+        📦 Descargar carpeta
+      </button>
+      <div id="mensajeDescargarCarpeta" class="mensaje"></div>
+    </div>
+    
+    <div class="divider"></div>
+    
     <!-- SECCIÓN AGREGAR GUARDIA -->
     <div class="section">
       <h2>➕ Agregar Guardia</h2>
@@ -90,31 +104,35 @@
     <div class="section">
       <h2>✅ Confirmar Cambios</h2>
       
-      <p class="info-text">
-        Cuando termines de agregar/eliminar guardias, presiona confirmar para aplicar los cambios finales.
+      <p class="info-text" style="color:#000">
+        Aplicar cambios finales.
       </p>
       
       <button onclick="confirmarCambios()" class="btn btn-success">
         Confirmar
       </button>
+      <br>
+      <br>
       
       <div id="mensajeConfirmar" class="mensaje"></div>
       
       <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ccc;">
-        <p class="info-text" style="font-size: 11px; color: #888;">
-          Si aparece error de protección al agregar/eliminar, usá este botón (debe ejecutarlo el ADMINISTRADOR):
+        <h3 style="font-size: 16px; font-weight: bold; color: #000; text-align: center;">ADMINISTRADOR</h3>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ccc;"><br></div>
+<p class="info-text">
+        Solucionar error de protección (debe ejecutarlo el ADMINISTRADOR):
         </p>
-        <button onclick="repararResumen()" class="btn btn-secondary" style="font-size: 12px;" id="btnReparar">
-          🔧 Reparar Protección Resumen
+        <button onclick="repararResumen()" class="btn btn-gray" id="btnReparar">
+          🔧 Reparar
         </button>
         <div id="mensajeReparar" class="mensaje"></div>
       </div>
       <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ccc;">
-        <p class="info-text" style="font-size: 11px; color: #888;">
-          Borra hojas cuyo nombre no está en Resumen (limpieza de hojas - debe ejecutarlo el ADMINISTRADOR):
+<p class="info-text">
+        Limpieza de hojas que no están en Resumen (debe ejecutarlo el ADMINISTRADOR):
         </p>
-        <button onclick="borrarHojasNoEnResumen()" class="btn btn-secondary" style="font-size: 12px;" id="btnBorrarHuerfanas">
-          🧹 Borrar hojas no en Resumen
+        <button onclick="borrarHojasNoEnResumen()" class="btn btn-gray" id="btnBorrarHuerfanas">
+          🧹 Limpieza
         </button>
         <div id="mensajeBorrarHuerfanas" class="mensaje"></div>
       </div>
@@ -590,7 +608,31 @@
         })
         .borrarHojasNoEnResumen();
     }
-    
+
+    function descargarCarpetaZip() {
+      var mensaje = document.getElementById('mensajeDescargarCarpeta');
+      var btn = document.getElementById('btnDescargarCarpeta');
+      ocultarMensaje(mensaje);
+      btn.disabled = true;
+      btn.textContent = 'Comprimiendo...';
+      google.script.run
+        .withSuccessHandler(function(resultado) {
+          btn.disabled = false;
+          btn.textContent = '📦 Descargar carpeta (ZIP)';
+          if (resultado.success && resultado.fileName) {
+            mostrarMensaje(mensaje, 'Zip creado: ' + resultado.fileName + '\nSe guardó en la carpeta destino.', 'success');
+          } else {
+            mostrarMensaje(mensaje, resultado.message || 'Error al crear el zip.', 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          btn.disabled = false;
+          btn.textContent = '📦 Descargar carpeta (ZIP)';
+          mostrarMensaje(mensaje, 'Error: ' + error, 'error');
+        })
+        .crearZipCarpetaParaDescarga();
+    }
+
     // ============================================
     // UTILIDADES
     // ============================================

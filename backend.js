@@ -25,7 +25,7 @@ function mostrarSidebar() {
   const html = HtmlService.createTemplateFromFile('Sidebar')
     .evaluate()
     .setTitle('Gestión de Guardias')
-    .setWidth(350);
+    .setWidth(500);
   
   SpreadsheetApp.getUi().showSidebar(html);
 }
